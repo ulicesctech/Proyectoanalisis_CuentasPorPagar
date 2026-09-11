@@ -1,0 +1,10 @@
+.cxp-mobile-navigation { display: none; }
+.cxp-shell textarea:disabled { color: #475569; }
+@media (max-width: 1080px) {
+  .cxp-shell aside { display: none; }
+  .cxp-shell header { display: none; }
+  .cxp-mobile-navigation { display: block; }
+}
+@media (max-width: 640px) {
+  .cxp-shell main { padding: 16px; }
+}

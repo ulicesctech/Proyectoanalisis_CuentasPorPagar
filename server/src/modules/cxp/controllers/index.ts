@@ -1,0 +1,17 @@
+export { cxpParametroController } from './configuracion/parametro.controller';
+export { cxpPeriodoController } from './configuracion/periodo.controller';
+export { cxpCuentaBancariaController } from './configuracion/cuentaBancaria.controller';
+export { cxpCompromisoController } from './configuracion/compromiso.controller';
+export { cxpDocumentoController } from './documentos/documento.controller';
+export { cxpDocumentoDetalleController } from './documentos/documentoDetalle.controller';
+export { cxpDocumentoTributoController } from './documentos/documentoTributo.controller';
+export { cxpLotePagoController } from './pagos/lotePago.controller';
+export { cxpPagoController } from './pagos/pago.controller';
+export { cxpAplicacionController } from './pagos/aplicacion.controller';
+export { cxpReglaAprobacionController } from './control/reglaAprobacion.controller';
+export { cxpAprobacionController } from './control/aprobacion.controller';
+export { cxpConciliacionProveedorController } from './conciliaciones/conciliacionProveedor.controller';
+export { cxpConciliacionProveedorDetalleController } from './conciliaciones/conciliacionProveedorDetalle.controller';
+export { cxpConciliacionPagoController } from './conciliaciones/conciliacionPago.controller';
+export { cxpEventoController } from './control/evento.controller';
+export { cxpArchivoController } from './control/archivo.controller';

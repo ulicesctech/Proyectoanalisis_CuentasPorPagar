@@ -1,0 +1,17 @@
+export { cxpParametroRepository } from './configuracion/parametro.repository';
+export { cxpPeriodoRepository } from './configuracion/periodo.repository';
+export { cxpCuentaBancariaRepository } from './configuracion/cuentaBancaria.repository';
+export { cxpCompromisoRepository } from './configuracion/compromiso.repository';
+export { cxpDocumentoRepository } from './documentos/documento.repository';
+export { cxpDocumentoDetalleRepository } from './documentos/documentoDetalle.repository';
+export { cxpDocumentoTributoRepository } from './documentos/documentoTributo.repository';
+export { cxpLotePagoRepository } from './pagos/lotePago.repository';
+export { cxpPagoRepository } from './pagos/pago.repository';
+export { cxpAplicacionRepository } from './pagos/aplicacion.repository';
+export { cxpReglaAprobacionRepository } from './control/reglaAprobacion.repository';
+export { cxpAprobacionRepository } from './control/aprobacion.repository';
+export { cxpConciliacionProveedorRepository } from './conciliaciones/conciliacionProveedor.repository';
+export { cxpConciliacionProveedorDetalleRepository } from './conciliaciones/conciliacionProveedorDetalle.repository';
+export { cxpConciliacionPagoRepository } from './conciliaciones/conciliacionPago.repository';
+export { cxpEventoRepository } from './control/evento.repository';
+export { cxpArchivoRepository } from './control/archivo.repository';
