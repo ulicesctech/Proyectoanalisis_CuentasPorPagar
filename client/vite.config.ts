@@ -8,4 +8,13 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // El workspace de contratos se compila a CommonJS fuera de node_modules.
+  optimizeDeps: {
+    include: ['@erp/contracts'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/node_modules/, /packages[\\/]contracts[\\/]dist/],
+    },
+  },
 });
