@@ -4,6 +4,27 @@ import type { CxpRecord, CxpResource, CxpValidationIssue } from './types';
 
 const present = (value: unknown) => value !== null && value !== undefined && value !== '';
 
+/**
+ * Campos de fecha/hora que registran un hecho que YA ocurrió (auditoría, ejecución,
+ * cierre, conciliación, decisión, etc.). Para estos no tiene sentido permitir una
+ * fecha futura. Campos como fechaVencimiento, fechaProgramada, fechaLimite,
+ * vigenteDesde/vigenteHasta, fechaInicio/fechaFin o periodoDesde/periodoHasta se
+ * excluyen a propósito porque por su naturaleza sí pueden apuntar al futuro
+ * (vencimientos, programaciones, vigencias, periodos que se configuran con anticipación).
+ */
+const CAMPOS_SIN_FUTURO = new Set([
+  'fechaCreacion', 'fechaModificacion', 'fechaCierre', 'fechaReapertura', 'fechaVerificacion',
+  'fechaAnulacion', 'fechaEnvio', 'fechaPago', 'fechaEjecucion', 'fechaReverso', 'fechaSolicitud',
+  'fechaDecision', 'fechaElaboracion', 'fechaConciliacion', 'fechaEvento', 'fechaCarga',
+  'fechaMovimiento', 'fechaRecepcion', 'fechaContabilizacion', 'fechaDocumento', 'fechaEfectiva',
+  'fechaAplicacion', 'fechaGeneracion', 'fechaProveedor', 'fechaEmpresa', 'fechaTipoCambio',
+]);
+
+/** Usado también en el formulario del cliente para limitar el selector de fecha (max=hoy). */
+export function isCxpFutureDateRestricted(fieldName: string): boolean {
+  return CAMPOS_SIN_FUTURO.has(fieldName);
+}
+
 /** Devuelve una copia; PATCH se combina con la fila bloqueada antes de calcular. */
 export function prepareCxpRecord(resource: CxpResource, input: CxpRecord): CxpRecord {
   const value = { ...input };
@@ -44,6 +65,13 @@ export function validateCxpRecord(resource: CxpResource, value: CxpRecord): CxpV
     sources.filter(key => key !== required).forEach(key => { if (has(key)) fail(key, 'No corresponde al tipo seleccionado; deja este campo vacío'); });
   };
   if (has('moneda') && String(value.moneda).length !== 3) fail('moneda', 'La moneda debe tener tres letras, por ejemplo GTQ');
+  const entity = getCxpEntity(resource);
+  const hoy = new Date().toISOString().slice(0, 10);
+  entity?.fields.forEach(field => {
+    if ((field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name) && has(field.name)) {
+      if (String(value[field.name]).slice(0, 10) > hoy) fail(field.name, 'Esta fecha no puede ser posterior al día de hoy');
+    }
+  });
   const association = getCxpEntity(resource)?.associationFields;
   if (association && association.filter(has).length !== 1) fail(association[0], 'Selecciona exactamente una entidad relacionada');
 

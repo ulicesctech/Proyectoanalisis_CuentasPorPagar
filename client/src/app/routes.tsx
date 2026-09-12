@@ -1,17 +1,18 @@
+// client/src/app/routes.tsx
 // Configuración de rutas para el ERP Universitario
-import type { RouteObject } from 'react-router-dom';
+import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import { cxpRoutes } from '../modules/cxp/routes';
 
 // --- CXC / Organización ---
-import { OrganizacionLayout } from '../modules/cxc/organizacion/organizacionLayout';
+import { OrganizacionLayout } from '../modules/cxc/organizacion/OrganizacionLayout';
 import { EmpresasPage } from '../modules/cxc/organizacion/EmpresasPage';
 import { SucursalesPage } from '../modules/cxc/organizacion/SucursalesPage';
 import { RutasPage } from '../modules/cxc/organizacion/RutasPage';
 import { RutaDetallePage } from '../modules/cxc/organizacion/RutaDetallePage';
 
 // --- CXC / Cobranza ---
-import { CobranzaLayout } from '../modules/cxc/cobranza/cobranzaLayout';
+import { CobranzaLayout } from '../modules/cxc/cobranza/CobranzaLayout';
 import { GestionesCobroPage } from '../modules/cxc/cobranza/GestionesCobroPage';
 import { PromesasPagoPage } from '../modules/cxc/cobranza/PromesasPagoPage';
 import { ConveniosPagoPage } from '../modules/cxc/cobranza/ConveniosPagoPage';
@@ -33,7 +34,10 @@ import { RecibosPage } from '../modules/cxc/pagos/RecibosPage';
 import { FormasPagoPage } from '../modules/cxc/pagos/FormasPagoPage';
 
 export const routes: RouteObject[] = [
+  { path: '/', element: <Navigate to="/cxp" replace /> },
+
   ...cxpRoutes,
+
   // --- CXC / Organización ---
   {
     path: '/cxc/organizacion/empresas',
@@ -118,6 +122,48 @@ export const routes: RouteObject[] = [
     ),
   },
 
+  // --- CXC / Crédito ---
+  {
+    path: '/cxc/credito/condiciones-credito',
+    element: (
+      <MainLayout>
+        <CreditoLayout>
+          <CondicionesCreditoPage />
+        </CreditoLayout>
+      </MainLayout>
+    ),
+  },
+  {
+    path: '/cxc/credito/notas-credito',
+    element: (
+      <MainLayout>
+        <CreditoLayout>
+          <NotasCreditoPage />
+        </CreditoLayout>
+      </MainLayout>
+    ),
+  },
+  {
+    path: '/cxc/credito/aplicaciones-nota-credito',
+    element: (
+      <MainLayout>
+        <CreditoLayout>
+          <AplicacionesNotaCreditoPage />
+        </CreditoLayout>
+      </MainLayout>
+    ),
+  },
+  {
+    path: '/cxc/credito/mora',
+    element: (
+      <MainLayout>
+        <CreditoLayout>
+          <MoraPage />
+        </CreditoLayout>
+      </MainLayout>
+    ),
+  },
+
   // --- CXC / Pagos ---
   {
     path: '/cxc/pagos/pagos',
@@ -170,37 +216,6 @@ export const routes: RouteObject[] = [
     ),
   },
 
-  // --- CXC / Crédito ---
-  {
-    path: '/cxc/credito/condiciones-credito',
-    element: (
-      <CreditoLayout>
-        <CondicionesCreditoPage />
-      </CreditoLayout>
-    ),
-  },
-  {
-    path: '/cxc/credito/notas-credito',
-    element: (
-      <CreditoLayout>
-        <NotasCreditoPage />
-      </CreditoLayout>
-    ),
-  },
-  {
-    path: '/cxc/credito/aplicaciones-nota-credito',
-    element: (
-      <CreditoLayout>
-        <AplicacionesNotaCreditoPage />
-      </CreditoLayout>
-    ),
-  },
-  {
-    path: '/cxc/credito/mora',
-    element: (
-      <CreditoLayout>
-        <MoraPage />
-      </CreditoLayout>
-    ),
-  },
+  // Cualquier ruta no reconocida cae aquí en vez de mostrar el 404 por defecto de react-router.
+  { path: '*', element: <Navigate to="/cxp" replace /> },
 ];

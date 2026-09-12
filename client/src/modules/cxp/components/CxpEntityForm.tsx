@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, prepareCxpRecord, validateCxpRecord,
+  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
 } from '@erp/contracts';
 import { apiClient, ApiError } from '../../../shared/api';
@@ -24,11 +24,47 @@ function localDate(timestamp = false): string {
   return timestamp ? `${day}T${pad(date.getHours())}:${pad(date.getMinutes())}:00` : day;
 }
 
+/**
+ * Genera un placeholder tipo "Ej: ..." para que la persona sepa qué formato
+ * o tipo de dato se espera en cada campo, sin tener que tocar los 17 metadatos
+ * generados (cubre las 17 entidades a partir del nombre/tipo del campo).
+ */
+function placeholderFor(field: CxpFieldDefinition): string | undefined {
+  const name = field.name.toLowerCase();
+  if (field.type === 'date') return 'Ej: 2025-01-31';
+  if (field.type === 'datetime') return 'Ej: 2025-01-31 08:00';
+  if (field.type === 'number') {
+    if (field.integer) return 'Ej: 1';
+    if (field.scale) return `Ej: ${(1).toFixed(Math.min(field.scale, 2))}`;
+    return 'Ej: 0';
+  }
+  if (name.includes('correo') || name.includes('email')) return 'Ej: nombre@dominio.com';
+  if (name.includes('telefono')) return 'Ej: 5555-5555';
+  if (name.includes('nit')) return 'Ej: 1234567-8';
+  if (name === 'moneda') return 'Ej: GTQ';
+  if (name.includes('hash')) return 'Ej: 64 caracteres hexadecimales (SHA-256)';
+  if (name.includes('uri') || name.includes('url')) return 'Ej: https://... o la ruta del archivo';
+  if (name.includes('codigo')) return 'Ej: COD-001';
+  if (name.includes('grupoparametro')) return 'Ej: VENCIMIENTOS';
+  if (name.includes('nombre')) return 'Ej: Nombre descriptivo';
+  if (name.includes('descripcion')) return 'Ej: Descripción breve';
+  if (name.includes('motivo')) return 'Ej: Motivo del cambio';
+  if (name.includes('observacion') || name.includes('nota')) return 'Ej: Observaciones adicionales';
+  if (name.includes('direccion')) return 'Ej: 5a avenida 10-25, zona 1';
+  if (field.type === 'textarea') return 'Ej: Descripción o detalle';
+  if (field.type === 'text' && !field.lookup && !field.options) return `Ej: ${field.label}`;
+  return undefined;
+}
+
 export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel }: CxpFormProps & { resource: CxpResource }) {
   const entity = getCxpEntity(resource)!;
   const editing = !!record;
   const initial = useMemo(() => Object.fromEntries(entity.fields.map(field => {
-    let value = record ? record[field.name] : initialValues[field.name] ?? field.defaultValue ?? '';
+    // En creación, los campos numéricos no se precargan con su valor por defecto de BD
+    // (ej. 0.0) para que se vean vacíos con su placeholder "Ej: ..." en vez de un "0"
+    // que parece escrito por el usuario. Selects/textos (moneda, estado) sí se precargan.
+    const fallbackDefault = field.type === 'number' ? undefined : field.defaultValue;
+    let value = record ? record[field.name] : initialValues[field.name] ?? fallbackDefault ?? '';
     if (value === 'SYSDATE') value = localDate();
     if (value === 'SYSTIMESTAMP') value = field.readOnly ? '' : localDate(true);
     return [field.name, value == null ? '' : String(value)];
@@ -130,11 +166,14 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     if (field.options) return <Select key={field.name} {...props} placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...field.options.map(option => ({ value: option, label: optionLabel(option) }))]}
       onChange={(event: React.ChangeEvent<HTMLSelectElement>) => change(field.name, event.target.value)} />;
     if (field.type === 'textarea') return <TextArea key={field.name} {...props} rows={4} maxLength={field.maxLength ?? 30000}
+      placeholder={placeholderFor(field)}
       className="sm:col-span-2" onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => change(field.name, event.target.value)} />;
+    const futureRestricted = (field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name);
     return <TextInput key={field.name} {...props} type={field.type === 'datetime' ? 'datetime-local' : field.type}
       maxLength={field.maxLength} step={field.type === 'datetime' ? '0.000001' : field.type === 'number' ? field.integer || field.scale === 0 ? '1' : field.scale ? String(10 ** -field.scale) : 'any' : undefined}
-      placeholder={field.identity || (field.readOnly && !field.calculated) ? 'Se genera al guardar' : undefined}
-      helperText={field.calculated ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : undefined}
+      max={futureRestricted ? localDate(field.type === 'datetime') : undefined}
+      placeholder={field.identity || (field.readOnly && !field.calculated) ? 'Se genera al guardar' : placeholderFor(field)}
+      helperText={field.calculated ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : futureRestricted ? 'No puede ser una fecha futura.' : undefined}
       onChange={(event: React.ChangeEvent<HTMLInputElement>) => change(field.name, event.target.value)} />;
   };
 
