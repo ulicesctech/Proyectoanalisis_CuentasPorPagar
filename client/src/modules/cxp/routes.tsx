@@ -17,11 +17,13 @@ import { CxpConciliacionProveedorDetallePage } from './conciliaciones/Conciliaci
 import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 import { CxpEventoPage } from './control/EventoPage';
 import { CxpArchivoPage } from './control/ArchivoPage';
+import { CxpProveedorPage } from './configuracion/ProveedorPage';
 
 export const cxpRoutes: RouteObject[] = [
   { path: '/cxp', element: <Navigate to="/cxp/parametros" replace /> },
   { path: '/cxp/parametros', element: <MainLayout><CxpParametroPage /></MainLayout> },
   { path: '/cxp/periodos', element: <MainLayout><CxpPeriodoPage /></MainLayout> },
+  { path: '/cxp/proveedores', element: <MainLayout><CxpProveedorPage /></MainLayout> },
   { path: '/cxp/cuentas-bancarias', element: <MainLayout><CxpCuentaBancariaPage /></MainLayout> },
   { path: '/cxp/compromisos', element: <MainLayout><CxpCompromisoPage /></MainLayout> },
   { path: '/cxp/documentos', element: <MainLayout><CxpDocumentoPage /></MainLayout> },

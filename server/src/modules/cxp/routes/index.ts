@@ -18,6 +18,7 @@ import conciliacionProveedorDetalleRoutes from './conciliaciones/conciliacionPro
 import conciliacionPagoRoutes from './conciliaciones/conciliacionPago.routes';
 import eventoRoutes from './control/evento.routes';
 import archivoRoutes from './control/archivo.routes';
+import proveedorRoutes from './configuracion/proveedor.routes';
 
 const router = Router();
 
@@ -47,5 +48,6 @@ router.use('/conciliaciones-proveedor-detalle', conciliacionProveedorDetalleRout
 router.use('/conciliaciones-pago', conciliacionPagoRoutes);
 router.use('/eventos', eventoRoutes);
 router.use('/archivos', archivoRoutes);
+router.use('/proveedores', proveedorRoutes);
 
 export default router;

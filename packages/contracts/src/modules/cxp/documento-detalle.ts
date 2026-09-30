@@ -1,6 +1,20 @@
 import { z } from 'zod';
 import { cxpDate, cxpNumber } from './validation';
 
+export const CLASIFICACIONES_ADQUISICION = [
+  "BIENES",
+  "SERVICIOS",
+  "SUMINISTROS",
+  "ACTIVO_FIJO",
+  "MANTENIMIENTO",
+  "ARRENDAMIENTO",
+  "VIATICOS",
+  "GASTO_OPERATIVO",
+  "OTRO",
+] as const;
+
+export type ClasificacionAdquisicion = typeof CLASIFICACIONES_ADQUISICION[number];
+
 export interface CxpDocumentoDetalle {
   idDetalle: number;
   idDocumento: number;
@@ -19,6 +33,7 @@ export interface CxpDocumentoDetalle {
   totalLinea: number;
   cuentaContable: string | null;
   centroCosto: string | null;
+  clasificacion?: ClasificacionAdquisicion | string | null;
   idDepartamento: number | null;
   proyecto: string | null;
   cantidadOrdenada: number | null;
@@ -46,6 +61,7 @@ export const createCxpDocumentoDetalleSchema = z.strictObject({
   retencion: cxpNumber({"precision": 18, "scale": 2}).default(0.0 as any),
   cuentaContable: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
   centroCosto: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
+  clasificacion: z.enum(CLASIFICACIONES_ADQUISICION).nullable().optional(),
   idDepartamento: cxpNumber({"integer": true}).nullable().optional(),
   proyecto: z.string().trim().min(1, "Este campo es obligatorio").max(100, "Máximo 100 caracteres").nullable().optional(),
   cantidadOrdenada: cxpNumber({"precision": 18, "scale": 4}).nullable().optional(),
@@ -73,6 +89,7 @@ export const updateCxpDocumentoDetalleSchema = z.strictObject({
   retencion: cxpNumber({"precision": 18, "scale": 2}).optional(),
   cuentaContable: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
   centroCosto: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
+  clasificacion: z.enum(CLASIFICACIONES_ADQUISICION).nullable().optional(),
   idDepartamento: cxpNumber({"integer": true}).nullable().optional(),
   proyecto: z.string().trim().min(1, "Este campo es obligatorio").max(100, "Máximo 100 caracteres").nullable().optional(),
   cantidadOrdenada: cxpNumber({"precision": 18, "scale": 4}).nullable().optional(),

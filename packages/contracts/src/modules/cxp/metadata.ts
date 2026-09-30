@@ -1575,6 +1575,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       "idDocumento",
       "numeroLinea",
       "descripcion",
+      "centroCosto",
       "cantidad",
       "precioUnitario",
       "totalLinea"
@@ -1735,10 +1736,21 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "centroCosto",
-        "label": "Centro costo",
+        "label": "Clasificación de adquisición",
         "type": "text",
-        "required": false,
+        "required": true,
         "section": "Datos generales",
+        "options": [
+          "BIENES",
+          "SERVICIOS",
+          "SUMINISTROS",
+          "ACTIVO_FIJO",
+          "MANTENIMIENTO",
+          "ARRENDAMIENTO",
+          "VIATICOS",
+          "GASTO_OPERATIVO",
+          "OTRO"
+        ],
         "maxLength": 50
       },
       {

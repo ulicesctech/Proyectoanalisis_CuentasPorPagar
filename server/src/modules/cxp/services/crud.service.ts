@@ -1,6 +1,6 @@
-import type { Connection } from 'oracledb';
+import oracledb, { type Connection } from 'oracledb';
 import {
-  CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord,
+  CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord, cxpMoneySum,
   type CxpListQuery, type CxpRecord, type CxpResource,
 } from '@erp/contracts';
 import { createCxpRepository, withCxpTransaction, type CxpRepository } from '../repositories/crud.repository';
@@ -49,6 +49,70 @@ async function requiredRow(connection: Connection, resource: CxpResource, id: nu
 }
 
 async function validateRelations(connection: Connection, resource: CxpResource, input: CxpRecord): Promise<void> {
+  if (resource === 'documentos-detalle') {
+    if (input.clasificacion && !input.centroCosto) input.centroCosto = input.clasificacion;
+    if (input.centroCosto && !input.clasificacion) input.clasificacion = input.centroCosto;
+    if (input.idDocumento) {
+      const doc = await requiredRow(connection, 'documentos', Number(input.idDocumento));
+      // Usar totalNeto como referencia definitiva; subtotal puede diferir por impuestos/retenciones
+      const docMonto = Number(doc.totalNeto ?? doc.subtotal ?? 0);
+      const newLinea = Number(input.totalLinea ?? input.subtotal ?? 0);
+
+      // Calcular suma de líneas existentes para este documento
+      let sql = 'SELECT NVL(SUM(TOTAL_LINEA), 0) AS SUMA FROM CXP_DOCUMENTO_DETALLE WHERE ID_DOCUMENTO = :idDoc';
+      const binds: Record<string, any> = { idDoc: Number(input.idDocumento) };
+      if (input.idDetalle) {
+        sql += ' AND ID_DETALLE <> :idDetalle';
+        binds.idDetalle = Number(input.idDetalle);
+      }
+      const sumResult = await connection.execute<{ SUMA: number }>(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+      const sumaExistente = Number(sumResult.rows?.[0]?.SUMA ?? 0);
+      const sumaTotal = cxpMoneySum(sumaExistente, newLinea);
+
+      if (docMonto > 0 && sumaTotal > docMonto) {
+        throw new CxpError(
+          `La suma acumulada de las líneas (Q${sumaTotal.toFixed(2)}) supera el total del documento cabecera (Q${docMonto.toFixed(2)}). Descuadre de Q${(sumaTotal - docMonto).toFixed(2)}.`,
+          400
+        );
+      }
+    }
+  }
+  if (resource === 'compromisos' && input.tipoCompromiso === 'FONDO_CAJA_CHICA') {
+    if (input.saldoCapital === undefined || input.saldoCapital === null) {
+      input.saldoCapital = input.montoTotal;
+    }
+  }
+  if (resource === 'documentos' && input.tipoDocumento === 'GASTO_CAJA_CHICA') {
+    if (!input.idCompromiso) throw new CxpError('El gasto de caja chica debe asociarse a un fondo de caja chica (idCompromiso)');
+    const fund = await requiredRow(connection, 'compromisos', Number(input.idCompromiso));
+    if (fund.tipoCompromiso !== 'FONDO_CAJA_CHICA') throw new CxpError('El compromiso debe ser de tipo FONDO_CAJA_CHICA');
+    if (['CERRADO', 'ANULADO', 'BLOQUEADO'].includes(String(fund.estado))) throw new CxpError('El fondo de caja chica no está activo');
+    const gastoMonto = Number(input.totalNeto ?? input.subtotal ?? 0);
+    const disponible = Number(fund.saldoCapital);
+    if (gastoMonto > disponible) {
+      throw new CxpError(`El monto del gasto (Q${gastoMonto.toFixed(2)}) supera el saldo disponible del fondo (Q${disponible.toFixed(2)}). Operación rechazada.`, 400);
+    }
+  }
+  if (resource === 'documentos' && input.tipoDocumento === 'REEMBOLSO' && input.idDocumentoRelacionado) {
+    // El gasto relacionado debe pertenecer al mismo fondo (idCompromiso)
+    const gastoOriginal = await requiredRow(connection, 'documentos', Number(input.idDocumentoRelacionado));
+    if (gastoOriginal.tipoDocumento !== 'GASTO_CAJA_CHICA') throw new CxpError('La reposición solo puede referenciar un documento de gasto de caja chica');
+    if (input.idCompromiso && gastoOriginal.idCompromiso !== input.idCompromiso) {
+      throw new CxpError('El gasto a reponer no pertenece al fondo de caja chica indicado');
+    }
+    // Validar que no exista una reposición activa previa para el mismo gasto
+    const { rows } = await connection.execute<{ CNT: number }>(
+      `SELECT COUNT(*) AS CNT FROM CXP_DOCUMENTO
+       WHERE TIPO_DOCUMENTO = 'REEMBOLSO'
+         AND ID_DOCUMENTO_RELACIONADO = :gastoId
+         AND ESTADO <> 'ANULADA'`,
+      { gastoId: Number(input.idDocumentoRelacionado) },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    if (Number(rows?.[0]?.CNT ?? 0) >= 1) {
+      throw new CxpError('Este gasto ya cuenta con una reposición activa. No se permite reponer dos veces el mismo gasto.', 400);
+    }
+  }
   if (resource === 'pagos' || resource === 'lotes-pago') {
     const origin = await requiredRow(connection, 'cuentas-bancarias', Number(input.idCuentaOrigen));
     if (origin.tipoTitular !== 'EMPRESA') throw new CxpError('La cuenta de origen debe pertenecer a una empresa');
@@ -125,6 +189,32 @@ export function createCxpService(repository: CxpRepository) {
       return withCxpTransaction(async connection => {
         await validateRelations(connection, resource, input);
         if (resource === 'aplicaciones' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
+        if (resource === 'documentos' && input.tipoDocumento === 'GASTO_CAJA_CHICA') {
+          const fund = await requiredRow(connection, 'compromisos', Number(input.idCompromiso));
+          const amount = Number(input.totalNeto ?? input.subtotal ?? 0);
+          if (amount > Number(fund.saldoCapital)) {
+            throw new CxpError(`El monto del gasto (Q${amount.toFixed(2)}) supera el saldo disponible del fondo (Q${Number(fund.saldoCapital).toFixed(2)}). Operación rechazada.`, 400);
+          }
+          if (['APROBADA', 'RECIBIDO', 'PENDIENTE_PAGO'].includes(String(input.estado))) {
+            const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), -amount);
+            await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+          }
+        }
+        if (resource === 'aprobaciones' && input.estado === 'APROBADA' && input.idDocumento) {
+          const doc = await requiredRow(connection, 'documentos', Number(input.idDocumento));
+          if (doc.tipoDocumento === 'GASTO_CAJA_CHICA' && doc.idCompromiso) {
+            const fund = await requiredRow(connection, 'compromisos', Number(doc.idCompromiso));
+            const amount = Number(doc.totalNeto ?? doc.subtotal ?? 0);
+            if (amount > Number(fund.saldoCapital)) {
+              throw new CxpError(`El monto del gasto (Q${amount.toFixed(2)}) supera el saldo disponible del fondo (Q${Number(fund.saldoCapital).toFixed(2)}). Operación rechazada.`, 400);
+            }
+            if (doc.estado !== 'APROBADA') {
+              const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), -amount);
+              await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+              await createCxpRepository('documentos').bind(connection).update(Number(doc.idDocumento), { estado: 'APROBADA' });
+            }
+          }
+        }
         const transaction = repository.bind(connection);
         const id = await transaction.create(input);
         return (await transaction.findById(id))!;
@@ -144,7 +234,40 @@ export function createCxpService(repository: CxpRepository) {
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
           await applyCxpMovement(connection, current, true);
-          // Se conserva la fotografía del movimiento original, no la de su reversión.
+        }
+        if (resource === 'documentos' && current.tipoDocumento === 'GASTO_CAJA_CHICA') {
+          const targetCompromiso = input.idCompromiso ?? current.idCompromiso;
+          const fund = await requiredRow(connection, 'compromisos', Number(targetCompromiso));
+          const amount = Number(input.totalNeto ?? current.totalNeto ?? 0);
+          if (current.estado !== 'APROBADA' && input.estado === 'APROBADA') {
+            if (amount > Number(fund.saldoCapital)) {
+              throw new CxpError(`El monto del gasto (Q${amount.toFixed(2)}) supera el saldo disponible del fondo (Q${Number(fund.saldoCapital).toFixed(2)}). Operación rechazada.`, 400);
+            }
+            const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), -amount);
+            await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+          }
+          if (current.estado === 'APROBADA' && ['ANULADA', 'RECHAZADA'].includes(String(input.estado))) {
+            const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), amount);
+            await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+          }
+        }
+        if (resource === 'aprobaciones' && current.estado !== 'APROBADA' && input.estado === 'APROBADA') {
+          const docId = input.idDocumento ?? current.idDocumento;
+          if (docId) {
+            const doc = await requiredRow(connection, 'documentos', Number(docId));
+            if (doc.tipoDocumento === 'GASTO_CAJA_CHICA' && doc.idCompromiso) {
+              const fund = await requiredRow(connection, 'compromisos', Number(doc.idCompromiso));
+              const amount = Number(doc.totalNeto ?? doc.subtotal ?? 0);
+              if (amount > Number(fund.saldoCapital)) {
+                throw new CxpError(`El monto del gasto (Q${amount.toFixed(2)}) supera el saldo disponible del fondo (Q${Number(fund.saldoCapital).toFixed(2)}). Operación rechazada.`, 400);
+              }
+              if (doc.estado !== 'APROBADA') {
+                const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), -amount);
+                await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+                await createCxpRepository('documentos').bind(connection).update(Number(doc.idDocumento), { estado: 'APROBADA' });
+              }
+            }
+          }
         }
         const changes = Object.fromEntries(Object.entries(input).filter(([key, value]) => key !== entity.idField && value !== current[key]));
         await transaction.update(id, changes);
@@ -162,6 +285,14 @@ export function createCxpService(repository: CxpRepository) {
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
           const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento));
           if (!deletable.documentos!.includes(String(parent.estado))) throw new CxpError('No se pueden eliminar componentes de un documento confirmado', 409);
+        }
+        if (resource === 'documentos' && current.tipoDocumento === 'GASTO_CAJA_CHICA' && current.idCompromiso) {
+          if (['APROBADA', 'RECIBIDO', 'PENDIENTE_PAGO'].includes(String(current.estado))) {
+            const fund = await requiredRow(connection, 'compromisos', Number(current.idCompromiso));
+            const amount = Number(current.totalNeto ?? current.subtotal ?? 0);
+            const nuevoSaldo = cxpMoneySum(Number(fund.saldoCapital), amount);
+            await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), { saldoCapital: nuevoSaldo });
+          }
         }
         await transaction.remove(id);
       });

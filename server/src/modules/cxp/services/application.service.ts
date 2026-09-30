@@ -23,9 +23,17 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
     if (destination.naturaleza !== 'D' || ['ANULADA', 'RECHAZADA', 'BLOQUEADA', 'DUPLICADO'].includes(String(destination.estado))) {
       throw new CxpError('El documento de destino no admite aplicaciones en su estado actual');
     }
+    if (destination.tipoDocumento === 'GASTO_CAJA_CHICA') {
+      if (Number(destination.saldoPendiente) <= 0 || ['PAGADA', 'APLICADA'].includes(String(destination.estado))) {
+        throw new CxpError('El gasto ya fue incluido en una reposición previa o ya fue saldado. Se rechaza reponer dos veces el mismo gasto.', 409);
+      }
+    }
     if (amount > Number(destination.saldoPendiente)) throw new CxpError('El monto supera el saldo pendiente del documento');
     if (source) {
-      if (destination.idProveedor === null || source.idProveedor !== destination.idProveedor) throw new CxpError('El origen y el destino deben pertenecer al mismo proveedor');
+      const isCajaChicaRep = destination.tipoDocumento === 'GASTO_CAJA_CHICA' || source.tipoPago === 'REPOSICION_CAJA';
+      if (!isCajaChicaRep && (destination.idProveedor === null || source.idProveedor !== destination.idProveedor)) {
+        throw new CxpError('El origen y el destino deben pertenecer al mismo proveedor');
+      }
       if (source.moneda !== destination.moneda) throw new CxpError('El origen y el destino deben utilizar la misma moneda');
       const available = Number(application.idPago ? source.montoNoAplicado : source.saldoPendiente);
       if (amount > available) throw new CxpError('El monto supera el saldo disponible del origen');
@@ -48,6 +56,15 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
   await createCxpRepository('documentos').bind(connection).update(Number(destination.idDocumento), {
     montoAplicado: applied, saldoPendiente: updatedDestination.saldoPendiente, estado: destinationState,
   });
+  if (destination.tipoDocumento === 'GASTO_CAJA_CHICA' && destination.idCompromiso) {
+    const fund = await createCxpRepository('compromisos').bind(connection).findById(Number(destination.idCompromiso), true);
+    if (fund && fund.tipoCompromiso === 'FONDO_CAJA_CHICA') {
+      const fundRestored = cxpMoneySum(Number(fund.saldoCapital), direction);
+      await createCxpRepository('compromisos').bind(connection).update(Number(fund.idCompromiso), {
+        saldoCapital: fundRestored,
+      });
+    }
+  }
   if (source) {
     const appliedSource = cxpMoneySum(Number(source.montoAplicado), direction);
     if (appliedSource < 0) throw new CxpError('El saldo del origen no permite esta reversión', 409);
