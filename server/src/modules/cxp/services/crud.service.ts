@@ -7,6 +7,8 @@ import { createCxpRepository, withCxpTransaction, type CxpRepository } from '../
 import { CXP_TABLES } from '../repositories/definitions';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { applyCxpMovement } from './application.service';
+import { checkApprovals, checkEditableParent, checkInitialState, checkStateChange, resetApprovals } from './workflow.service';
+import { checkFacturaEspecialGuard } from './documentos/facturaEspecial.guard';
 import { CxpError } from './errors';
 
 const deletable: Partial<Record<CxpResource, string[]>> = {
@@ -122,7 +124,10 @@ export function createCxpService(repository: CxpRepository) {
     async create(raw: unknown) {
       let input = checked(resource, schema.create.parse(raw) as CxpRecord);
       if (resource === 'aplicaciones' && input.estado === 'REVERTIDA') throw new CxpError('Una aplicación nueva debe registrarse pendiente, aplicada o cancelada');
+      checkInitialState(resource, input);
       return withCxpTransaction(async connection => {
+        await checkFacturaEspecialGuard(connection, resource, null, input);
+        await checkEditableParent(connection, resource, input);
         await validateRelations(connection, resource, input);
         if (resource === 'aplicaciones' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         const transaction = repository.bind(connection);
@@ -138,9 +143,15 @@ export function createCxpService(repository: CxpRepository) {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        await checkFacturaEspecialGuard(connection, resource, current, patch);
         checkChange(resource, current, patch);
         let input = checked(resource, { ...current, ...patch });
+        checkStateChange(resource, current, input);
+        await checkEditableParent(connection, resource, current);
+        if (input.idDocumento !== current.idDocumento) await checkEditableParent(connection, resource, input);
         await validateRelations(connection, resource, input);
+        await checkApprovals(connection, resource, id, input, current.estado);
+        await resetApprovals(connection, resource, id, current.estado, input.estado);
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
           await applyCxpMovement(connection, current, true);
@@ -157,6 +168,7 @@ export function createCxpService(repository: CxpRepository) {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        await checkFacturaEspecialGuard(connection, resource, current, null);
         if (deletable[resource] && !deletable[resource]!.includes(String(current.estado))) throw new CxpError('El registro ya fue confirmado o cerrado y debe conservarse. Utiliza su anulación o reversión cuando corresponda', 409);
         if (Number(current.montoAplicado) > 0) throw new CxpError('El registro tiene aplicaciones; revierte esas operaciones antes de continuar', 409);
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {

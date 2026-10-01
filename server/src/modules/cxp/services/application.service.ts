@@ -1,5 +1,7 @@
 import type { Connection } from 'oracledb';
-import { cxpMoneySum, prepareCxpRecord, type CxpRecord, type CxpResource } from '@erp/contracts';
+import {
+  CXP_AVAILABLE_CREDIT_STATES, CXP_PAYABLE_DOCUMENT_STATES, cxpMoneySum, prepareCxpRecord, type CxpRecord, type CxpResource,
+} from '@erp/contracts';
 import { createCxpRepository } from '../repositories/crud.repository';
 import { CxpError } from './errors';
 
@@ -20,8 +22,11 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
   const destination = rows.get(`documentos:${application.idDocumentoDestino}`)!;
   const source = application.idPago ? rows.get(`pagos:${application.idPago}`)! : application.idDocumentoOrigen ? rows.get(`documentos:${application.idDocumentoOrigen}`)! : null;
   if (!reverse) {
-    if (destination.naturaleza !== 'D' || ['ANULADA', 'RECHAZADA', 'BLOQUEADA', 'DUPLICADO'].includes(String(destination.estado))) {
-      throw new CxpError('El documento de destino no admite aplicaciones en su estado actual');
+    if (destination.naturaleza !== 'D' || !CXP_PAYABLE_DOCUMENT_STATES.includes(String(destination.estado))) {
+      throw new CxpError('El documento de destino debe estar aprobado y pendiente de pago para recibir aplicaciones');
+    }
+    if (destination.tipoDocumento === 'FACTURA_ESPECIAL' && destination.estado === 'APROBADA') {
+      throw new CxpError('La factura especial debe emitirse antes de recibir pagos');
     }
     if (amount > Number(destination.saldoPendiente)) throw new CxpError('El monto supera el saldo pendiente del documento');
     if (source) {
@@ -32,8 +37,8 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
       if (application.idPago && !['EJECUTADO', 'CONFIRMADO', 'PARCIALMENTE_APLICADO', 'APLICADO', 'CONCILIADO'].includes(String(source.estado))) {
         throw new CxpError('Para aplicar el pago, este debe estar ejecutado o confirmado');
       }
-      if (application.idDocumentoOrigen && (source.naturaleza !== 'C' || ['ANULADA', 'RECHAZADA', 'BLOQUEADA'].includes(String(source.estado)))) {
-        throw new CxpError('El documento de origen debe ser un crédito disponible');
+      if (application.idDocumentoOrigen && (source.naturaleza !== 'C' || !CXP_AVAILABLE_CREDIT_STATES.includes(String(source.estado)))) {
+        throw new CxpError('El documento de origen debe ser un crédito aprobado con saldo disponible');
       }
     }
     if (application.tipoAplicacion === 'COMPENSACION_CXC' && application.estadoCxc !== 'CONFIRMADA') {

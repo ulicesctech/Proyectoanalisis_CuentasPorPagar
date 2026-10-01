@@ -94,8 +94,13 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     ] : resource === 'lotes-pago' ? [['pagos', 'idLote', 'Pagos']]
       : resource === 'conciliaciones-proveedor' ? [['conciliaciones-proveedor-detalle', 'idConciliacionProv', 'Detalle']]
       : resource === 'pagos' ? [['aplicaciones', 'idPago', 'Aplicaciones']] : [];
-    return relations.map(([target, field, title]) => <Link key={target} className="text-xs text-blue-700 underline underline-offset-2"
+    const links = relations.map(([target, field, title]) => <Link key={target} className="text-xs text-blue-700 underline underline-offset-2"
       to={`/cxp/${target}?filterField=${field}&filterValue=${id}`}>{title}</Link>);
+    // Las facturas especiales se editan, emiten y anulan desde su propio módulo.
+    if (resource === 'documentos' && row.tipoDocumento === 'FACTURA_ESPECIAL') {
+      links.unshift(<Link key="factura-especial" className="text-xs font-semibold text-blue-700 underline underline-offset-2" to={`/cxp/facturas-especiales/${id}`}>Factura especial</Link>);
+    }
+    return links;
   };
 
   return <CxpLayout resource={resource}>

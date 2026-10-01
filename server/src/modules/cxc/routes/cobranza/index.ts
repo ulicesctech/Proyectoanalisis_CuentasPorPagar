@@ -2,8 +2,10 @@ import { Router } from 'express';
 import * as gestionCobroController from '../../controllers/cobranza/gestionCobro.controller';
 import * as promesaPagoController from '../../controllers/cobranza/promesaPago.controller';
 import * as convenioPagoController from '../../controllers/cobranza/convenioPago.controller';
+import { registerIdParams } from '../../../../shared';
 
 const router = Router();
+registerIdParams(router);
 
 // --- Gestiones de cobro ---
 router.get('/gestiones-cobro', gestionCobroController.list);

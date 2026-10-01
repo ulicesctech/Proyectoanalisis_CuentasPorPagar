@@ -925,7 +925,8 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
           "OBLIGACION_FISCAL",
           "SALDO_INICIAL",
           "COMPROBANTE_SERVICIO",
-          "OTRO"
+          "OTRO",
+          "FACTURA_ESPECIAL"
         ],
         "maxLength": 30
       },

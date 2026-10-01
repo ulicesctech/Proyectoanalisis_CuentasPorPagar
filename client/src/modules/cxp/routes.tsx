@@ -12,6 +12,12 @@ import { CxpDocumentoPage } from './documentos/DocumentoPage';
 import { CxpDocumentoDetallePage } from './documentos/DocumentoDetallePage';
 import { CxpDocumentoTributoPage } from './documentos/DocumentoTributoPage';
 
+// --- Facturas especiales y tributos ---
+import { CxpFacturasEspecialesPage } from './facturas-especiales/FacturasEspecialesPage';
+import { CxpFacturaEspecialDetallePage } from './facturas-especiales/FacturaEspecialDetallePage';
+import { CxpRevisionAprobacionPage } from './facturas-especiales/RevisionAprobacionPage';
+import { CxpReglasTributariasPage } from './facturas-especiales/ReglasTributariasPage';
+
 // --- Pagos ---
 import { CxpLotePagoPage } from './pagos/LotePagoPage';
 import { CxpPagoPage } from './pagos/PagoPage';
@@ -41,6 +47,12 @@ export const cxpRoutes: RouteObject[] = [
   { path: '/cxp/documentos', element: <CxpDocumentoPage /> },
   { path: '/cxp/documentos-detalle', element: <CxpDocumentoDetallePage /> },
   { path: '/cxp/documentos-tributos', element: <CxpDocumentoTributoPage /> },
+
+  // --- Facturas especiales y tributos ---
+  { path: '/cxp/facturas-especiales', element: <CxpFacturasEspecialesPage /> },
+  { path: '/cxp/facturas-especiales/revision', element: <CxpRevisionAprobacionPage /> },
+  { path: '/cxp/facturas-especiales/:id', element: <CxpFacturaEspecialDetallePage /> },
+  { path: '/cxp/reglas-tributarias', element: <CxpReglasTributariasPage /> },
 
   // --- Pagos ---
   { path: '/cxp/lotes-pago', element: <CxpLotePagoPage /> },

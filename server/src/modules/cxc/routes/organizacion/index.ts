@@ -3,8 +3,10 @@ import * as empresaController from '../../controllers/organizacion/empresa.contr
 import * as sucursalController from '../../controllers/organizacion/sucursal.controller';
 import * as rutaController from '../../controllers/organizacion/ruta.controller';
 import * as rutaDetalleController from '../../controllers/organizacion/rutaDetalle.controller';
+import { registerIdParams } from '../../../../shared';
 
 const router = Router();
+registerIdParams(router);
 
 // --- Empresas ---
 // /options va ANTES de /:id para que Express no confunda "options" con un id.

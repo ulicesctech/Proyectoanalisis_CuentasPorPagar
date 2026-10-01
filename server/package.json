@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test:fe": "tsx --test --test-concurrency=1 tests/facturasEspeciales.acceptance.ts"
   },
   "dependencies": {
     "@erp/contracts": "workspace:*",
