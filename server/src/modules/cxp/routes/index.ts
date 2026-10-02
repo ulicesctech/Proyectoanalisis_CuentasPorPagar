@@ -21,6 +21,7 @@ import archivoRoutes from './control/archivo.routes';
 import antiguedadRoutes from '../reports/antiguedad/antiguedad.routes';
 import libroComprasRoutes from '../reports/libro-compras/libro-compras.routes';
 import estadisticaRoutes from '../reports/estadistica/estadistica.routes';
+import asisteComprasRoutes from '../reports/asiste-compras/asiste-compras.routes';
 
 const router = Router();
 
@@ -53,5 +54,6 @@ router.use('/archivos', archivoRoutes);
 router.use('/reportes', antiguedadRoutes);
 router.use('/reportes', libroComprasRoutes);
 router.use('/reportes', estadisticaRoutes);
+router.use('/reportes', asisteComprasRoutes);
 
 export default router;
