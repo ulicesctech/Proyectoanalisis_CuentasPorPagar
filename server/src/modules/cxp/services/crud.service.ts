@@ -1,3 +1,4 @@
+import { cxpEventoRepository } from '../repositories/control/evento.repository';
 import type { Connection } from 'oracledb';
 import {
   CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord,
@@ -20,7 +21,7 @@ const deletable: Partial<Record<CxpResource, string[]>> = {
   aprobaciones: ['PENDIENTE', 'CANCELADA'],
   'conciliaciones-proveedor': ['BORRADOR', 'EN_REVISION'],
   'conciliaciones-pago': ['PENDIENTE', 'EN_REVISION', 'RECHAZADO'],
-  eventos: ['ABIERTO', 'CANCELADO'],
+  eventos: [],
 };
 
 function validId(id: number): number {
@@ -79,6 +80,9 @@ async function validateRelations(connection: Connection, resource: CxpResource, 
 }
 
 function checkChange(resource: CxpResource, current: CxpRecord, input: CxpRecord): void {
+  if (resource === 'eventos') {
+  throw new CxpError('Los registros de eventos son de solo lectura y no pueden modificarse', 409);
+}
   if (['documentos', 'pagos'].includes(resource) && Number(current.montoAplicado) > 0) {
     for (const field of ['idProveedor', 'moneda', 'naturaleza', 'idCuentaOrigen', 'idCuentaDestino']) {
       if (Object.hasOwn(input, field) && input[field] !== current[field]) throw new CxpError('Revierte las aplicaciones antes de cambiar el proveedor, la moneda o las cuentas', 409);
@@ -148,6 +152,56 @@ export function createCxpService(repository: CxpRepository) {
         }
         const changes = Object.fromEntries(Object.entries(input).filter(([key, value]) => key !== entity.idField && value !== current[key]));
         await transaction.update(id, changes);
+        if (
+  resource === 'aprobaciones' &&
+  current.estado !== input.estado &&
+  ['APROBADA', 'RECHAZADA'].includes(String(input.estado))
+) {
+  let idDocumento: number | null = null;
+  let idPago: number | null = null;
+  let idLote: number | null = null;
+  let idCuentaBancaria: number | null = null;
+  let idCompromiso: number | null = null;
+  let idPeriodo: number | null = null;
+
+  if (input.idDocumento != null) {
+    idDocumento = Number(input.idDocumento);
+  } else if (input.idPago != null) {
+    idPago = Number(input.idPago);
+  } else if (input.idLote != null) {
+    idLote = Number(input.idLote);
+  } else if (input.idCuentaBancaria != null) {
+    idCuentaBancaria = Number(input.idCuentaBancaria);
+  } else if (input.idCompromiso != null) {
+    idCompromiso = Number(input.idCompromiso);
+  } else if (input.idPeriodo != null) {
+    idPeriodo = Number(input.idPeriodo);
+  }
+
+  const evento = {
+    tipoEvento: 'DECISION_APROBACION',
+    asunto: input.estado === 'APROBADA'
+      ? 'Aprobación aprobada'
+      : 'Aprobación rechazada',
+    detalle: `La aprobación ${id} cambió de ${current.estado} a ${input.estado}.`,
+    estadoAnterior: String(current.estado),
+    estadoNuevo: String(input.estado),
+    prioridad: input.estado === 'RECHAZADA' ? 'ALTA' : 'NORMAL',
+    usuarioEvento: Number(input.idUsuarioAprobador),
+    idDocumento,
+    idPago,
+    idLote,
+    idCuentaBancaria,
+    idCompromiso,
+    idPeriodo,
+  };
+
+  const eventoRepository = cxpEventoRepository.bind(connection);
+  await eventoRepository.create(evento);
+}
+
+  
+
         return (await transaction.findById(id))!;
       });
     },
