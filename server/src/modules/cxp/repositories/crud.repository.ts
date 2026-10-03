@@ -5,7 +5,7 @@ import { CXP_TABLES } from './definitions';
 
 type OracleRow = Record<string, string | number | null>;
 
-function selection(resource: CxpResource): string {
+export function selection(resource: CxpResource): string {
   return Object.values(CXP_TABLES[resource].columns).map(({ column, type }) => {
     if (type === 'DATE') return `TO_CHAR(${column}, 'YYYY-MM-DD') AS ${column}`;
     if (type === 'TIMESTAMP') return `TO_CHAR(${column}, 'YYYY-MM-DD"T"HH24:MI:SS.FF6') AS ${column}`;
@@ -13,7 +13,7 @@ function selection(resource: CxpResource): string {
   }).join(', ');
 }
 
-function options(resource: CxpResource): ExecuteOptions {
+export function options(resource: CxpResource): ExecuteOptions {
   const fetchInfo: Record<string, { type: typeof oracledb.STRING }> = {};
   for (const { column, type } of Object.values(CXP_TABLES[resource].columns)) {
     if (type === 'CLOB') fetchInfo[column] = { type: oracledb.STRING };
@@ -21,7 +21,7 @@ function options(resource: CxpResource): ExecuteOptions {
   return { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchInfo };
 }
 
-function mapRow(resource: CxpResource, row: OracleRow): CxpRecord {
+export function mapRow(resource: CxpResource, row: OracleRow): CxpRecord {
   return Object.fromEntries(Object.entries(CXP_TABLES[resource].columns).map(([name, { column, type }]) => {
     const value = row[column] ?? null;
     return [name, type === 'CHAR' && typeof value === 'string' ? value.trim() : value];

@@ -114,7 +114,11 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   }
 
   const renderField = (field: CxpFieldDefinition) => {
-    const locked = readOnly || field.readOnly || busy;
+    const calculatedDocumentTerm = resource === 'documentos' && ['fechaVencimiento', 'diasCredito'].includes(field.name);
+    const locked = readOnly || field.readOnly || busy || (resource === 'documentos' && field.name === 'estado') ||
+      calculatedDocumentTerm ||
+      (['documentos-detalle', 'documentos-tributos'].includes(resource) && field.name === 'idDocumento' &&
+        (editing || !!initialValues.idDocumento));
     const value = field.calculated ? String(preview[field.name] ?? '') : values[field.name];
     const props = { id: `cxp-${field.name}`, label: field.label, required: field.required && !field.readOnly,
       error: errors[field.name], value, isReadOnly: locked };
@@ -134,7 +138,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     return <TextInput key={field.name} {...props} type={field.type === 'datetime' ? 'datetime-local' : field.type}
       maxLength={field.maxLength} step={field.type === 'datetime' ? '0.000001' : field.type === 'number' ? field.integer || field.scale === 0 ? '1' : field.scale ? String(10 ** -field.scale) : 'any' : undefined}
       placeholder={field.identity || (field.readOnly && !field.calculated) ? 'Se genera al guardar' : undefined}
-      helperText={field.calculated ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : undefined}
+      helperText={field.calculated || calculatedDocumentTerm ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : undefined}
       onChange={(event: React.ChangeEvent<HTMLInputElement>) => change(field.name, event.target.value)} />;
   };
 

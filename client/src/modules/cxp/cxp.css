@@ -1,5 +1,6 @@
 .cxp-mobile-navigation { display: none; }
 .cxp-shell textarea:disabled { color: #475569; }
+.cxp-documentos-table th, .cxp-documentos-table td { padding-left: 12px; padding-right: 12px; }
 @media (max-width: 1080px) {
   .cxp-shell aside { display: none; }
   .cxp-shell header { display: none; }

@@ -8,6 +8,14 @@ import { CXP_TABLES } from '../repositories/definitions';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { applyCxpMovement } from './application.service';
 import { CxpError } from './errors';
+import {
+  assertCxpDocumentoCalendarDates, assertCxpDocumentoCreateState, assertCxpDocumentoCrudChange,
+  assertCxpDocumentoComponentsEditable,
+} from './documentos/documento.policy';
+import { assertNoDocumentoDuplicate, mapDocumentoUniqueError } from './documentos/documento.duplicate';
+import {
+  recalculateDocumentoDueDateFromSnapshot, snapshotDocumentoDueDate,
+} from './documentos/documento.dueDate';
 
 const deletable: Partial<Record<CxpResource, string[]>> = {
   periodos: ['ABIERTO', 'REABIERTO'],
@@ -42,8 +50,8 @@ function checked(resource: CxpResource, input: CxpRecord): CxpRecord {
   return prepared;
 }
 
-async function requiredRow(connection: Connection, resource: CxpResource, id: number) {
-  const row = await createCxpRepository(resource).bind(connection).findById(id);
+async function requiredRow(connection: Connection, resource: CxpResource, id: number, lock = false) {
+  const row = await createCxpRepository(resource).bind(connection).findById(id, lock);
   if (!row) throw new CxpError('El registro relacionado ya no existe', 400);
   return row;
 }
@@ -96,7 +104,7 @@ function checkChange(resource: CxpResource, current: CxpRecord, input: CxpRecord
   }
 }
 
-export function createCxpService(repository: CxpRepository) {
+export function createCxpService(repository: CxpRepository, run: typeof withCxpTransaction = withCxpTransaction) {
   const resource = repository.resource;
   const entity = getCxpEntity(resource)!;
   const schema = CXP_SCHEMAS[resource];
@@ -120,27 +128,71 @@ export function createCxpService(repository: CxpRepository) {
     },
     options(query: { search?: string; selected?: string }) { return listCxpOptions(resource, query); },
     async create(raw: unknown) {
+      const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      const suppliedTerms = {
+        fechaVencimiento: Object.hasOwn(rawRecord, 'fechaVencimiento') ? rawRecord.fechaVencimiento : undefined,
+        diasCredito: Object.hasOwn(rawRecord, 'diasCredito') ? rawRecord.diasCredito : undefined,
+      };
       let input = checked(resource, schema.create.parse(raw) as CxpRecord);
+      if (resource === 'documentos') {
+        assertCxpDocumentoCreateState(input);
+        assertCxpDocumentoCalendarDates(input);
+      }
+      if (resource === 'aprobaciones' && input.idDocumento != null) {
+        throw new CxpError('Las decisiones de documentos requieren la operación controlada de aprobación', 409);
+      }
       if (resource === 'aplicaciones' && input.estado === 'REVERTIDA') throw new CxpError('Una aplicación nueva debe registrarse pendiente, aplicada o cancelada');
-      return withCxpTransaction(async connection => {
+      try { return await run(async connection => {
+        if (resource === 'documentos') {
+          input = await snapshotDocumentoDueDate(connection, input, suppliedTerms);
+          assertCxpDocumentoCalendarDates(input);
+        }
         await validateRelations(connection, resource, input);
+        if (resource === 'documentos') await assertNoDocumentoDuplicate(connection, input);
+        if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
+          const parent = await requiredRow(connection, 'documentos', Number(input.idDocumento), true);
+          assertCxpDocumentoComponentsEditable(parent);
+        }
         if (resource === 'aplicaciones' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         const transaction = repository.bind(connection);
         const id = await transaction.create(input);
         return (await transaction.findById(id))!;
-      });
+      }); } catch (error) { if (resource === 'documentos') mapDocumentoUniqueError(error, input); throw error; }
     },
     async update(id: number, raw: unknown) {
       validId(id);
       const patch = schema.update.parse(raw) as CxpRecord;
       if (!Object.keys(patch).length) throw new CxpError('No se recibieron campos para actualizar');
-      return withCxpTransaction(async connection => {
+      return run(async connection => {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        if (resource === 'aprobaciones' && (current.idDocumento != null || patch.idDocumento != null)) {
+          throw new CxpError('Las decisiones de documentos no se modifican mediante el CRUD común', 409);
+        }
+        if (resource === 'documentos') assertCxpDocumentoCrudChange(current, patch);
+        if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
+          if (Object.hasOwn(patch, 'idDocumento') && patch.idDocumento !== current.idDocumento) throw new CxpError('No se puede mover una línea o tributo a otro documento', 409);
+          const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento), true);
+          assertCxpDocumentoComponentsEditable(parent);
+        }
         checkChange(resource, current, patch);
         let input = checked(resource, { ...current, ...patch });
+        if (resource === 'documentos') {
+          const conditionChanged = Object.hasOwn(patch, 'idCondicionCredito') && patch.idCondicionCredito !== current.idCondicionCredito;
+          const dateChanged = Object.hasOwn(patch, 'fechaDocumento') && patch.fechaDocumento !== current.fechaDocumento;
+          if ((Object.hasOwn(patch, 'fechaVencimiento') && patch.fechaVencimiento !== current.fechaVencimiento) ||
+              (Object.hasOwn(patch, 'diasCredito') && patch.diasCredito !== current.diasCredito)) {
+            throw new CxpError('El vencimiento y los días de crédito se calculan desde la condición de pago', 409, [
+              { campo: Object.hasOwn(patch, 'fechaVencimiento') ? 'fechaVencimiento' : 'diasCredito', mensaje: 'Modifica la condición de pago o la fecha del documento' },
+            ]);
+          }
+          if (conditionChanged) input = await snapshotDocumentoDueDate(connection, input);
+          else if (dateChanged) input = recalculateDocumentoDueDateFromSnapshot(input);
+          assertCxpDocumentoCalendarDates(input);
+        }
         await validateRelations(connection, resource, input);
+        if (resource === 'documentos') await assertNoDocumentoDuplicate(connection, input, id);
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
           await applyCxpMovement(connection, current, true);
@@ -153,15 +205,18 @@ export function createCxpService(repository: CxpRepository) {
     },
     async remove(id: number) {
       validId(id);
-      await withCxpTransaction(async connection => {
+      await run(async connection => {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        if (resource === 'aprobaciones' && current.idDocumento != null) {
+          throw new CxpError('Las decisiones de documentos deben conservarse como historial', 409);
+        }
         if (deletable[resource] && !deletable[resource]!.includes(String(current.estado))) throw new CxpError('El registro ya fue confirmado o cerrado y debe conservarse. Utiliza su anulación o reversión cuando corresponda', 409);
         if (Number(current.montoAplicado) > 0) throw new CxpError('El registro tiene aplicaciones; revierte esas operaciones antes de continuar', 409);
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
-          const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento));
-          if (!deletable.documentos!.includes(String(parent.estado))) throw new CxpError('No se pueden eliminar componentes de un documento confirmado', 409);
+          const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento), true);
+          assertCxpDocumentoComponentsEditable(parent);
         }
         await transaction.remove(id);
       });

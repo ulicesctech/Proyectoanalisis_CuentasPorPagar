@@ -5,6 +5,8 @@ import { CxpPeriodoPage } from './configuracion/PeriodoPage';
 import { CxpCuentaBancariaPage } from './configuracion/CuentaBancariaPage';
 import { CxpCompromisoPage } from './configuracion/CompromisoPage';
 import { CxpDocumentoPage } from './documentos/DocumentoPage';
+import { CxpDocumentoRegistroPage } from './documentos/DocumentoRegistroPage';
+import { CxpDocumentoExpedientePage } from './documentos/DocumentoExpedientePage';
 import { CxpDocumentoDetallePage } from './documentos/DocumentoDetallePage';
 import { CxpDocumentoTributoPage } from './documentos/DocumentoTributoPage';
 import { CxpLotePagoPage } from './pagos/LotePagoPage';
@@ -25,6 +27,8 @@ export const cxpRoutes: RouteObject[] = [
   { path: '/cxp/cuentas-bancarias', element: <MainLayout><CxpCuentaBancariaPage /></MainLayout> },
   { path: '/cxp/compromisos', element: <MainLayout><CxpCompromisoPage /></MainLayout> },
   { path: '/cxp/documentos', element: <MainLayout><CxpDocumentoPage /></MainLayout> },
+  { path: '/cxp/documentos/nuevo', element: <MainLayout><CxpDocumentoRegistroPage /></MainLayout> },
+  { path: '/cxp/documentos/:id', element: <MainLayout><CxpDocumentoExpedientePage /></MainLayout> },
   { path: '/cxp/documentos-detalle', element: <MainLayout><CxpDocumentoDetallePage /></MainLayout> },
   { path: '/cxp/documentos-tributos', element: <MainLayout><CxpDocumentoTributoPage /></MainLayout> },
   { path: '/cxp/lotes-pago', element: <MainLayout><CxpLotePagoPage /></MainLayout> },
