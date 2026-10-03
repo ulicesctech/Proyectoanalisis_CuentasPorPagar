@@ -1,3 +1,4 @@
+import { ProcesosPagoPage } from './procesos/ProcesosPagoPage';
 // client/src/modules/cxp/routes.tsx
 import { Navigate, type RouteObject } from 'react-router-dom';
 
@@ -29,6 +30,10 @@ import { CxpConciliacionProveedorDetallePage } from './conciliaciones/Conciliaci
 import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 
 export const cxpRoutes: RouteObject[] = [
+  { path: '/cxp/procesos-pago', element: <Navigate to="/cxp/contrasenas" replace /> },
+  { path: '/cxp/contrasenas', element: <ProcesosPagoPage key="contrasenas" bandeja="contrasenas" /> },
+  { path: '/cxp/autorizaciones', element: <ProcesosPagoPage key="autorizaciones" bandeja="autorizaciones" /> },
+  { path: '/cxp/cheques', element: <ProcesosPagoPage key="cheques" bandeja="cheques" /> },
   { path: '/cxp', element: <Navigate to="/cxp/parametros" replace /> },
 
   // --- Configuración ---
@@ -44,12 +49,14 @@ export const cxpRoutes: RouteObject[] = [
 
   // --- Pagos ---
   { path: '/cxp/lotes-pago', element: <CxpLotePagoPage /> },
-  { path: '/cxp/pagos', element: <CxpPagoPage /> },
+  { path: '/cxp/pagos', element: <ProcesosPagoPage key="pagos" bandeja="pagos" /> },
+  { path: '/cxp/pagos/registros', element: <CxpPagoPage /> },
   { path: '/cxp/aplicaciones', element: <CxpAplicacionPage /> },
 
   // --- Control ---
   { path: '/cxp/reglas-aprobacion', element: <CxpReglaAprobacionPage /> },
-  { path: '/cxp/aprobaciones', element: <CxpAprobacionPage /> },
+  { path: '/cxp/aprobaciones', element: <Navigate to="/cxp/autorizaciones" replace /> },
+  { path: '/cxp/aprobaciones/registros', element: <CxpAprobacionPage /> },
   { path: '/cxp/eventos', element: <CxpEventoPage /> },
   { path: '/cxp/archivos', element: <CxpArchivoPage /> },
 

@@ -1,3 +1,4 @@
+import procesosRoutes from './procesos.routes';
 import { Router } from 'express';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { cxpStringQuery } from '../controllers/crud.controller';
@@ -20,6 +21,7 @@ import eventoRoutes from './control/evento.routes';
 import archivoRoutes from './control/archivo.routes';
 
 const router = Router();
+router.use('/procesos', procesosRoutes);
 
 router.get('/catalogos/:catalog', async (req, res, next) => {
   try {

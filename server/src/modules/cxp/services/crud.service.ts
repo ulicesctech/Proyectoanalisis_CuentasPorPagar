@@ -1,3 +1,4 @@
+import { assertOutsideProcess } from '../repositories/proceso-guard.repository';
 import type { Connection } from 'oracledb';
 import {
   CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord,
@@ -123,6 +124,7 @@ export function createCxpService(repository: CxpRepository) {
       let input = checked(resource, schema.create.parse(raw) as CxpRecord);
       if (resource === 'aplicaciones' && input.estado === 'REVERTIDA') throw new CxpError('Una aplicación nueva debe registrarse pendiente, aplicada o cancelada');
       return withCxpTransaction(async connection => {
+        await assertOutsideProcess(connection, resource, input);
         await validateRelations(connection, resource, input);
         if (resource === 'aplicaciones' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         const transaction = repository.bind(connection);
@@ -138,8 +140,10 @@ export function createCxpService(repository: CxpRepository) {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        await assertOutsideProcess(connection, resource, current);
         checkChange(resource, current, patch);
         let input = checked(resource, { ...current, ...patch });
+        await assertOutsideProcess(connection, resource, input);
         await validateRelations(connection, resource, input);
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
@@ -157,6 +161,7 @@ export function createCxpService(repository: CxpRepository) {
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        await assertOutsideProcess(connection, resource, current);
         if (deletable[resource] && !deletable[resource]!.includes(String(current.estado))) throw new CxpError('El registro ya fue confirmado o cerrado y debe conservarse. Utiliza su anulación o reversión cuando corresponda', 409);
         if (Number(current.montoAplicado) > 0) throw new CxpError('El registro tiene aplicaciones; revierte esas operaciones antes de continuar', 409);
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
