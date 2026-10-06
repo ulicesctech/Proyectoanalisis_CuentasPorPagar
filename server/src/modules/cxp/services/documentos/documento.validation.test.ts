@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { Connection } from 'oracledb';
 import { cxpDocumentoRepository, findDocumentoDuplicate } from '../../repositories/documentos/documento.repository';
 import { createCxpService } from '../crud.service';
 import { createDocumentoValidationOperation } from './documento.service';
 import { assertCxpDocumentoCalendarDates } from './documento.policy';
+import type { DteStorage } from './dte.storage';
 
 type Row = Record<string, string | number | null>;
+const dteContent = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
+const dteUri = 'cxp-dte://00000000-0000-4000-8000-000000000001.pdf';
+const dteRow = (idDocumento = 1): Row => ({
+  ID_ARCHIVO: 9, ID_DOCUMENTO: idDocumento, CATEGORIA: 'DTE', NOMBRE_ARCHIVO: 'dte.pdf',
+  TIPO_MIME: 'application/pdf', TAMANO_BYTES: dteContent.length,
+  HASH_SHA256: createHash('sha256').update(dteContent).digest('hex'),
+  URI_ALMACENAMIENTO: dteUri, VERSION_ARCHIVO: 1, ES_VERSION_ACTUAL: 'S',
+  FECHA_CARGA: '2026-09-01T10:00:00',
+});
 
 const baseDocument = (): Row => ({
   ID_DOCUMENTO: 1, ID_PROVEEDOR: 2, ID_SUCURSAL: 3, TIPO_DOCUMENTO: 'FACTURA',
@@ -34,7 +45,8 @@ const taxTribute = (): Row => ({
   ESTADO: 'CALCULADO',
 });
 
-function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; conditions?: Row[]; uniqueError?: string; updateError?: boolean } = {}) {
+function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; conditions?: Row[];
+  files?: Row[]; fileContent?: Buffer | null; uniqueError?: string; updateError?: boolean } = {}) {
   let rows = (options.rows ?? []).map(row => ({ ...row }));
   const writes: string[] = [];
   const queries: string[] = [];
@@ -62,6 +74,9 @@ function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; condit
       }
       if (sql.includes('FROM CXP_DOCUMENTO_DETALLE')) return { rows: options.lines ?? [] };
       if (sql.includes('FROM CXP_DOCUMENTO_TRIBUTO')) return { rows: options.tributes ?? [] };
+      if (sql.includes('FROM CXP_ARCHIVO')) return {
+        rows: (options.files ?? [dteRow()]).filter(row => row.ID_DOCUMENTO === binds.idDocumento),
+      };
       if (sql.includes('FROM CXP_DOCUMENTO WHERE ID_DOCUMENTO = :id')) {
         const row = rows.find(item => item.ID_DOCUMENTO === binds.id);
         return { rows: row ? [{ ...row }] : [] };
@@ -92,7 +107,16 @@ function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; condit
     try { return await operation(connection); }
     catch (error) { rows = before; throw error; }
   }) as typeof import('../../repositories/crud.repository').withCxpTransaction;
-  return { connection, run, writes, queries, get rows() { return rows; } };
+  const storage: DteStorage = {
+    async save() { throw new Error('No se espera una carga'); },
+    async read(uri) {
+      if (uri !== dteUri || options.fileContent === null) throw new Error('Archivo no disponible');
+      return options.fileContent ?? dteContent;
+    },
+    async exists(uri) { return uri === dteUri && options.fileContent !== null; },
+    async remove() { throw new Error('No se espera una eliminación'); },
+  };
+  return { connection, run, storage, writes, queries, get rows() { return rows; } };
 }
 
 const registration = {
@@ -340,7 +364,7 @@ test('el alta de DTE no admite un estado posterior o de borrador', async () => {
 test('RF04 conserva RECIBIDO ante diferencia de importes y detalle incompleto', async () => {
   for (const lines of [[{ ...baseLine(), TOTAL_LINEA: 90 }], [{ ...baseLine(), DESCRIPCION: null }]]) {
     const db = memory({ rows: [baseDocument()], lines });
-    await assert.rejects(createDocumentoValidationOperation(db.run)(1), (error: { status: number; details: unknown[] }) =>
+    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: unknown[] }) =>
       error.status === 422 && error.details.length > 0);
     assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
     assert.deepEqual(db.writes, []);
@@ -350,7 +374,7 @@ test('RF04 conserva RECIBIDO ante diferencia de importes y detalle incompleto', 
 test('RF04 rechaza un encabezado con subtotal distinto de sus líneas', async () => {
   const document = { ...baseDocument(), SUBTOTAL: 101, TOTAL_BRUTO: 101, TOTAL_NETO: 101, TOTAL_LOCAL: 101, SALDO_PENDIENTE: 101 };
   const db = memory({ rows: [document], lines: [baseLine()] });
-  await assert.rejects(createDocumentoValidationOperation(db.run)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'subtotal'));
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
@@ -358,7 +382,7 @@ test('RF04 rechaza un encabezado con subtotal distinto de sus líneas', async ()
 
 test('RF04 no aplica la tolerancia bancaria de 0,01 a TOTAL_LOCAL del DTE', async () => {
   const db = memory({ rows: [{ ...baseDocument(), TOTAL_LOCAL: 100.01 }], lines: [baseLine()] });
-  await assert.rejects(createDocumentoValidationOperation(db.run)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'totalLocal'));
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
@@ -366,31 +390,47 @@ test('RF04 no aplica la tolerancia bancaria de 0,01 a TOTAL_LOCAL del DTE', asyn
 
 test('RF04 valida líneas y tributos, y avanza a PENDIENTE_APROBACION', async () => {
   const db = memory({ rows: [baseDocument()], lines: [baseLine()] });
-  const result = await createDocumentoValidationOperation(db.run)(1);
+  const result = await createDocumentoValidationOperation(db.run, db.storage)(1);
   assert.equal(result.estado, 'PENDIENTE_APROBACION');
   assert.deepEqual(db.writes, ['UPDATE']);
+});
+
+test('RF04 exige contenido DTE del mismo documento e íntegro antes de avanzar', async () => {
+  for (const options of [
+    { files: [] },
+    { files: [dteRow(2)] },
+    { files: [dteRow()], fileContent: null },
+    { files: [dteRow()], fileContent: Buffer.from('alterado') },
+  ]) {
+    const db = memory({ rows: [baseDocument()], lines: [baseLine()], ...options });
+    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1),
+      (error: { status: number; details: { campo: string }[] }) =>
+        error.status === 422 && error.details.some(issue => issue.campo === 'archivos'));
+    assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
+    assert.deepEqual(db.writes, []);
+  }
 });
 
 test('RF04 concilia el impuesto del encabezado, línea y CXP_DOCUMENTO_TRIBUTO', async () => {
   const document = { ...baseDocument(), IMPUESTO_TOTAL: 10, TOTAL_BRUTO: 110, TOTAL_NETO: 110, TOTAL_LOCAL: 110, SALDO_PENDIENTE: 110 };
   const line = { ...baseLine(), IMPUESTO: 10, TOTAL_LINEA: 110 };
   const valid = memory({ rows: [document], lines: [line], tributes: [taxTribute()] });
-  assert.equal((await createDocumentoValidationOperation(valid.run)(1)).estado, 'PENDIENTE_APROBACION');
+  assert.equal((await createDocumentoValidationOperation(valid.run, valid.storage)(1)).estado, 'PENDIENTE_APROBACION');
 
   const inconsistent = memory({ rows: [document], lines: [line], tributes: [{ ...taxTribute(), MONTO: 9 }] });
-  await assert.rejects(createDocumentoValidationOperation(inconsistent.run)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(inconsistent.run, inconsistent.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'impuestoTotal'));
   assert.equal(inconsistent.rows[0].ESTADO, 'RECIBIDO');
 
   const included = memory({ rows: [document], lines: [line], tributes: [{ ...taxTribute(), INCLUIDO_PRECIO: 'S' }] });
-  await assert.rejects(createDocumentoValidationOperation(included.run)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(included.run, included.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo.endsWith('INCLUIDO_PRECIO')));
   assert.equal(included.rows[0].ESTADO, 'RECIBIDO');
 });
 
 test('un fallo en UPDATE revierte la transición completa', async () => {
   const db = memory({ rows: [baseDocument()], lines: [baseLine()], updateError: true });
-  await assert.rejects(createDocumentoValidationOperation(db.run)(1), /Fallo durante UPDATE/);
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), /Fallo durante UPDATE/);
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
 });

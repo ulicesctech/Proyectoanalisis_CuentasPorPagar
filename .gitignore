@@ -49,3 +49,7 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 *.log
+
+# Contenido DTE persistente durante desarrollo; en despliegue configura CXP_DTE_STORAGE_DIR.
+server/storage/
+storage/

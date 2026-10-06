@@ -6,6 +6,7 @@ import {
   decideDocumentoApproval, readDocumentoApprovalContext,
 } from '../../services/documentos/documento.approval';
 import { previewDocumentoDueDate } from '../../services/documentos/documento.dueDate';
+import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
 import type { Request, Response, NextFunction } from 'express';
 
 const baseController = createCxpController(cxpDocumentoService);
@@ -41,5 +42,28 @@ export const cxpDocumentoController = {
   async previewDueDate(req: Request, res: Response, next: NextFunction) {
     try { res.json(await previewDocumentoDueDate(req.body)); }
     catch (error) { next(error); }
+  },
+  async uploadDte(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.status(201).json(await uploadDocumentoDte(Number(req.params.id), req.body,
+        req.header('X-File-Name'), req.header('Content-Type')));
+    } catch (error) { next(error); }
+  },
+  async listFiles(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await documentoDteReads.list(Number(req.params.id))); }
+    catch (error) { next(error); }
+  },
+  async downloadDte(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { metadata, content } = await documentoDteReads.download(Number(req.params.id), Number(req.params.idArchivo));
+      const encodedName = encodeURIComponent(metadata.nombreArchivo)
+        .replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+      res.setHeader('Content-Type', metadata.tipoMime);
+      res.setHeader('Content-Length', content.length);
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(content);
+    } catch (error) { next(error); }
   },
 };

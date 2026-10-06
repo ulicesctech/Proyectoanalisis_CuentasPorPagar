@@ -5,6 +5,8 @@ import { getDocumentoComponents, getDocumentoExpediente, listDocumentos } from '
 import { assertNoDocumentoDuplicate } from './documento.duplicate';
 import { collectDocumentoValidationIssues } from './documento.validation';
 import { collectCxpDocumentoCalendarDateIssues } from './documento.policy';
+import { documentoDteAttachmentIssue } from './documentoArchivo.service';
+import { createDteStorage, type DteStorage } from './dte.storage';
 import { CxpError } from '../errors';
 import { buildPaginationMeta, getCxpEntity } from '@erp/contracts';
 
@@ -41,7 +43,10 @@ export async function readDocumentoExpediente(id: number) {
   return expediente;
 }
 
-export function createDocumentoValidationOperation(run: typeof withCxpTransaction = withCxpTransaction) {
+export function createDocumentoValidationOperation(
+  run: typeof withCxpTransaction = withCxpTransaction,
+  storage: DteStorage = createDteStorage(),
+) {
   return async (id: number) => {
     if (!Number.isSafeInteger(id) || id <= 0) throw new CxpError('El identificador debe ser un entero positivo');
     return run(async connection => {
@@ -52,6 +57,8 @@ export function createDocumentoValidationOperation(run: typeof withCxpTransactio
       const { details, tributes } = await getDocumentoComponents(connection, id);
       const issues = collectDocumentoValidationIssues(document, details, tributes);
       issues.push(...collectCxpDocumentoCalendarDateIssues(document));
+      const attachmentIssue = await documentoDteAttachmentIssue(connection, id, storage);
+      if (attachmentIssue) issues.push(attachmentIssue);
       try { await assertNoDocumentoDuplicate(connection, document, id); }
       catch (error) {
         if (error instanceof CxpError && error.status === 409) issues.push(...error.details);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Download, RefreshCw, ShieldCheck, Upload, XCircle } from 'lucide-react';
 import type {
   CxpAplicacion, CxpArchivo, CxpDocumento, CxpDocumentoDetalle, CxpDocumentoTributo,
   CxpRecord,
@@ -22,6 +22,10 @@ type Expediente = {
 };
 
 type ValidationIssue = { campo: string; mensaje: string };
+type DocumentoDteFile = {
+  idArchivo: number; categoria: string; nombreArchivo: string; tamanoBytes: number;
+  versionArchivo: number; disponible: boolean;
+};
 
 type ApprovalContext = {
   estadoDocumento: string;
@@ -50,7 +54,7 @@ const fieldLabels: Record<string, string> = {
   totalBruto: 'Total bruto', totalLocal: 'Total local', saldoPendiente: 'Saldo pendiente',
   subtotal: 'Subtotal', descuentoTotal: 'Descuento', impuestoTotal: 'Impuesto',
   retencionTotal: 'Retención', montoAplicado: 'Monto aplicado',
-  detalles: 'Líneas',
+  detalles: 'Líneas', archivos: 'DTE adjunto',
 };
 
 function issueLabel(field: string) {
@@ -59,13 +63,13 @@ function issueLabel(field: string) {
   return fieldLabels[field] ?? readableState(field);
 }
 
-function nextStep(documento: CxpDocumento, lineas: CxpDocumentoDetalle[]) {
+function nextStep(documento: CxpDocumento, lineas: CxpDocumentoDetalle[], hasDte: boolean) {
   switch (documento.estado) {
     case 'RECIBIDO':
       return {
-        title: !documento.idProveedor ? 'Completa el proveedor' : !lineas.length ? 'Agrega las líneas del documento' : 'Valida el documento',
-        description: 'Revisa la cabecera, las líneas, los tributos y los importes antes de enviarlo a aprobación.',
-        blocker: !documento.idProveedor ? 'Falta seleccionar el proveedor.' : !lineas.length ? 'Debe tener al menos una línea para avanzar.' : null,
+        title: !documento.idProveedor ? 'Completa el proveedor' : !hasDte ? 'Adjunta el DTE' : !lineas.length ? 'Agrega las líneas del documento' : 'Valida el documento',
+        description: 'Adjunta el comprobante y revisa cabecera, líneas, tributos e importes antes de enviarlo a aprobación.',
+        blocker: !documento.idProveedor ? 'Falta seleccionar el proveedor.' : !hasDte ? 'RF04 requiere el contenido del DTE.' : !lineas.length ? 'Debe tener al menos una línea para avanzar.' : null,
       };
     case 'PENDIENTE_APROBACION':
       return { title: 'Registrar la decisión requerida', description: 'La validación terminó. Identifica al responsable y completa las aprobaciones configuradas.',
@@ -102,6 +106,10 @@ export function CxpDocumentoExpedientePage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const [expediente, setExpediente] = useState<Expediente | null>(null);
+  const [dteFiles, setDteFiles] = useState<DocumentoDteFile[]>([]);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -115,7 +123,7 @@ export function CxpDocumentoExpedientePage() {
   const [observation, setObservation] = useState('');
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(location.state?.created ? 'Documento recibido. Completa sus líneas y tributos antes de validarlo.' : null);
+  const [notice, setNotice] = useState<string | null>(location.state?.created ? 'Documento recibido. Adjunta el DTE y completa sus líneas y tributos antes de validarlo.' : null);
 
   useEffect(() => {
     let active = true;
@@ -124,8 +132,9 @@ export function CxpDocumentoExpedientePage() {
     Promise.all([
       apiClient.get<Expediente>(`/cxp/documentos/${id}/expediente`),
       apiClient.get<ApprovalContext>(`/cxp/documentos/${id}/aprobacion${buildQueryString({ actorId: actorId || undefined })}`),
+      apiClient.get<DocumentoDteFile[]>(`/cxp/documentos/${id}/archivos`),
     ])
-      .then(([result, approvalResult]) => { if (active) { setExpediente(result); setApproval(approvalResult); } })
+      .then(([result, approvalResult, files]) => { if (active) { setExpediente(result); setApproval(approvalResult); setDteFiles(files); } })
       .catch(reason => {
         if (!active) return;
         setExpediente(null);
@@ -166,6 +175,35 @@ export function CxpDocumentoExpedientePage() {
     } finally { setValidating(false); }
   };
 
+  const uploadDte = async () => {
+    if (!id || !uploadFile || uploadBusy) return;
+    setUploadBusy(true); setUploadError(null); setNotice(null);
+    try {
+      await apiClient.uploadDte(`/cxp/documentos/${id}/archivos`, uploadFile);
+      setUploadFile(null);
+      const input = window.document.getElementById('expediente-dte') as HTMLInputElement | null;
+      if (input) input.value = '';
+      setNotice('DTE adjuntado. Revisa las líneas y los tributos antes de validar.');
+      setRefresh(value => value + 1);
+    } catch (reason) {
+      setUploadError(reason instanceof ApiError ? reason.message : 'No se pudo adjuntar el DTE.');
+    } finally { setUploadBusy(false); }
+  };
+
+  const downloadDte = async (archivo: CxpArchivo) => {
+    if (!id) return;
+    setUploadError(null);
+    try {
+      const blob = await apiClient.download(`/cxp/documentos/${id}/archivos/${archivo.idArchivo}/descargar`);
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement('a');
+      link.href = url; link.download = archivo.nombreArchivo; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (reason) {
+      setUploadError(reason instanceof ApiError ? reason.message : 'No se pudo descargar el DTE.');
+    }
+  };
+
   const decide = async (decision: 'APROBAR' | 'RECHAZAR', idRegla: number) => {
     if (!id || !actorId || decisionBusy) return;
     if (decision === 'RECHAZAR' && !observation.trim()) {
@@ -194,7 +232,8 @@ export function CxpDocumentoExpedientePage() {
   };
 
   const document = expediente?.documento;
-  const guide = document ? nextStep(document, expediente.lineas) : null;
+  const hasDte = dteFiles.some(file => file.categoria === 'DTE' && file.disponible);
+  const guide = document ? nextStep(document, expediente.lineas, hasDte) : null;
   const currency = document?.moneda || 'GTQ';
 
   return <CxpLayout resource="documentos">
@@ -241,9 +280,10 @@ export function CxpDocumentoExpedientePage() {
           {guide.blocker && <p className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 text-sm text-amber-900">{guide.blocker}</p>}
           {document.estado === 'RECIBIDO' && <div className="flex flex-wrap items-center gap-2 mt-4">
             {!document.idProveedor ? <Button onClick={() => setEditing(true)}>Completar proveedor</Button>
-              : !expediente.lineas.length ? <Link to={`/cxp/documentos-detalle?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Gestionar líneas</Link>
-                : <Button icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
-            {(!document.idProveedor || !expediente.lineas.length) && <Button variant="secondary" icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
+              : !hasDte ? <Button icon={Upload} onClick={() => window.document.getElementById('expediente-dte')?.click()}>Adjuntar DTE</Button>
+                : !expediente.lineas.length ? <Link to={`/cxp/documentos-detalle?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Gestionar líneas</Link>
+                  : <Button icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
+            {hasDte && (!document.idProveedor || !expediente.lineas.length) && <Button variant="secondary" icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
             {document.idProveedor && expediente.lineas.length > 0 && <Button variant="secondary" onClick={() => setEditing(true)}>Editar cabecera</Button>}
             {expediente.lineas.length > 0 && <Link to={`/cxp/documentos-detalle?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Gestionar líneas</Link>}
             <Link to={`/cxp/documentos-tributos?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Gestionar tributos</Link>
@@ -339,6 +379,14 @@ export function CxpDocumentoExpedientePage() {
         <section className="space-y-3" aria-label="Archivos asociados">
           <div><h2 className="font-bold text-slate-900">Archivos <span className="text-slate-400 font-medium">({expediente.archivos.length})</span></h2>
             <p className="text-xs text-slate-500 mt-1">Archivos relacionados con el documento o sus aplicaciones.</p></div>
+          {document.estado === 'RECIBIDO' && !hasDte && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+            <label htmlFor="expediente-dte" className="block text-sm font-semibold text-blue-900">Adjuntar contenido del DTE (PDF o XML)</label>
+            <input id="expediente-dte" type="file" accept=".pdf,.xml,application/pdf,application/xml,text/xml"
+              onChange={event => setUploadFile(event.target.files?.[0] ?? null)} className="block w-full text-sm text-slate-700" />
+            <p className="text-xs text-blue-800">El contenido se conserva con su expediente. Después completa líneas y tributos; la carga no extrae los datos automáticamente.</p>
+            <Button icon={Upload} disabled={!uploadFile || uploadBusy} onClick={uploadDte}>{uploadBusy ? 'Adjuntando…' : 'Adjuntar DTE'}</Button>
+          </div>}
+          {uploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uploadError}</p>}
           <DataTable data={expediente.archivos} emptyText="No hay archivos asociados."
             columns={[
               { header: 'Nombre', accessorKey: 'nombreArchivo' },
@@ -346,6 +394,11 @@ export function CxpDocumentoExpedientePage() {
               { header: 'Relacionado con', cell: ({ row }: { row: CxpArchivo }) => row.idAplicacion ? `Aplicación #${row.idAplicacion}` : 'Documento' },
               { header: 'Versión', accessorKey: 'versionArchivo' },
               { header: 'Fecha', cell: ({ row }: { row: CxpArchivo }) => formatDocumentoDate(row.fechaCarga) },
+              { header: 'Contenido', cell: ({ row }: { row: CxpArchivo }) => {
+                const file = dteFiles.find(item => item.idArchivo === row.idArchivo);
+                return file?.disponible ? <Button variant="secondary" icon={Download} onClick={() => downloadDte(row)}>Descargar</Button>
+                  : <span className="text-xs text-slate-500">{file ? 'No disponible en este almacenamiento' : 'Solo metadatos'}</span>;
+              } },
             ]} />
         </section>
 

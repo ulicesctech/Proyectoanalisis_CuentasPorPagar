@@ -5,6 +5,7 @@ import {
 } from '@erp/contracts';
 import { createCxpRepository, withCxpTransaction, type CxpRepository } from '../repositories/crud.repository';
 import { CXP_TABLES } from '../repositories/definitions';
+import { listDocumentoArchivos } from '../repositories/documentos/documentoArchivo.repository';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { applyCxpMovement } from './application.service';
 import { CxpError } from './errors';
@@ -138,6 +139,9 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         assertCxpDocumentoCreateState(input);
         assertCxpDocumentoCalendarDates(input);
       }
+      if (resource === 'archivos' && (input.idDocumento != null || input.categoria === 'DTE')) {
+        throw new CxpError('Adjunta el DTE desde el expediente; sus metadatos se generan al cargar el contenido', 409);
+      }
       if (resource === 'aprobaciones' && input.idDocumento != null) {
         throw new CxpError('Las decisiones de documentos requieren la operación controlada de aprobación', 409);
       }
@@ -169,6 +173,10 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
         if (resource === 'aprobaciones' && (current.idDocumento != null || patch.idDocumento != null)) {
           throw new CxpError('Las decisiones de documentos no se modifican mediante el CRUD común', 409);
+        }
+        if (resource === 'archivos' && (current.idDocumento != null || patch.idDocumento != null ||
+            current.categoria === 'DTE' || patch.categoria === 'DTE')) {
+          throw new CxpError('Los adjuntos de documentos se conservan mediante la operación de carga', 409);
         }
         if (resource === 'documentos') assertCxpDocumentoCrudChange(current, patch);
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
@@ -211,6 +219,12 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
         if (resource === 'aprobaciones' && current.idDocumento != null) {
           throw new CxpError('Las decisiones de documentos deben conservarse como historial', 409);
+        }
+        if (resource === 'archivos' && current.idDocumento != null) {
+          throw new CxpError('El contenido y los metadatos del DTE deben conservarse juntos', 409);
+        }
+        if (resource === 'documentos' && (await listDocumentoArchivos(connection, id)).length) {
+          throw new CxpError('El documento tiene archivos asociados y debe conservarse con su expediente', 409);
         }
         if (deletable[resource] && !deletable[resource]!.includes(String(current.estado))) throw new CxpError('El registro ya fue confirmado o cerrado y debe conservarse. Utiliza su anulación o reversión cuando corresponda', 409);
         if (Number(current.montoAplicado) > 0) throw new CxpError('El registro tiene aplicaciones; revierte esas operaciones antes de continuar', 409);

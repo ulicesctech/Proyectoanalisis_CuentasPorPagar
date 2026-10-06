@@ -306,7 +306,7 @@ export function CxpDocumentoRegistroPage() {
               <span className="text-sm text-blue-800">Se registrará con estado <strong>RECIBIDO</strong>.</span>
               <strong className="text-xl text-blue-800">{formatDocumentoMoney(preview.totalNeto, values.moneda)}</strong>
             </div>
-            <p className="text-sm text-slate-600">Después del registro podrás añadir las líneas y los tributos desde el expediente y ejecutar la validación.</p>
+            <p className="text-sm text-slate-600">Después del registro adjunta el DTE y añade las líneas y los tributos desde el expediente. RF04 exigirá el adjunto antes de enviarlo a aprobación.</p>
           </div>}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 mt-6 pt-4">
@@ -322,7 +322,7 @@ export function CxpDocumentoRegistroPage() {
           <h2 className="text-sm font-bold text-slate-900">Así continúa el trámite</h2>
           <ol className="mt-4 space-y-4 text-sm text-slate-600">
             <li><strong className="text-blue-700">1. Recibido</strong><p>Registra la cabecera del DTE.</p></li>
-            <li><strong className="text-slate-800">2. Completar expediente</strong><p>Agrega líneas y tributos según el comprobante.</p></li>
+            <li><strong className="text-slate-800">2. Completar expediente</strong><p>Adjunta el DTE y agrega líneas y tributos según el comprobante.</p></li>
             <li><strong className="text-slate-800">3. Validar</strong><p>Comprueba datos e importes antes de enviarlo a aprobación.</p></li>
           </ol>
         </aside>
