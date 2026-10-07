@@ -139,6 +139,10 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         assertCxpDocumentoCreateState(input);
         assertCxpDocumentoCalendarDates(input);
       }
+      if (resource === 'pagos' && (input.estado !== 'BORRADOR' || Number(input.montoAplicado) !== 0 ||
+          input.ejecutadoPor != null || input.fechaPago != null || input.conciliadoPor != null)) {
+        throw new CxpError('El pago se registra como borrador; su ejecución requiere una operación controlada', 409);
+      }
       if (resource === 'archivos' && (input.idDocumento != null || input.categoria === 'DTE')) {
         throw new CxpError('Adjunta el DTE desde el expediente; sus metadatos se generan al cargar el contenido', 409);
       }
@@ -179,6 +183,16 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
           throw new CxpError('Los adjuntos de documentos se conservan mediante la operación de carga', 409);
         }
         if (resource === 'documentos') assertCxpDocumentoCrudChange(current, patch);
+        if (resource === 'pagos') {
+          if (['estado', 'ejecutadoPor', 'fechaPago', 'conciliadoPor'].some(field =>
+            Object.hasOwn(patch, field) && patch[field] !== current[field])) {
+            throw new CxpError('El estado y la ejecución del pago requieren una operación controlada', 409);
+          }
+          if (Number(current.montoAplicado) > 0 && ['montoObligacion', 'montoDescuento', 'montoRetencion', 'montoComision']
+            .some(field => Object.hasOwn(patch, field) && patch[field] !== current[field])) {
+            throw new CxpError('Revierte las aplicaciones antes de cambiar los importes del pago', 409);
+          }
+        }
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
           if (Object.hasOwn(patch, 'idDocumento') && patch.idDocumento !== current.idDocumento) throw new CxpError('No se puede mover una línea o tributo a otro documento', 409);
           const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento), true);

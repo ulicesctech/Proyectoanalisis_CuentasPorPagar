@@ -22,7 +22,7 @@ function documentRow(estado = 'APROBADA', saldo = 100, naturaleza = 'D', id = 1)
 
 function paymentRow(): Row {
   return {
-    ID_PAGO: 2, ID_PROVEEDOR: 7, MONEDA: 'GTQ', ESTADO: 'CONFIRMADO',
+    ID_PAGO: 2, ID_PROVEEDOR: 7, MONEDA: 'GTQ', TIPO_PAGO: 'ORDINARIO', ESTADO: 'CONFIRMADO',
     MONTO_OBLIGACION: 100, MONTO_APLICADO: 0, MONTO_NO_APLICADO: 100,
   };
 }

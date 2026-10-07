@@ -7,6 +7,7 @@ import {
 } from '../../services/documentos/documento.approval';
 import { previewDocumentoDueDate } from '../../services/documentos/documento.dueDate';
 import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
+import { documentoPaymentOperations, listDocumentoEligiblePayments } from '../../services/documentos/documento.payment';
 import type { Request, Response, NextFunction } from 'express';
 
 const baseController = createCxpController(cxpDocumentoService);
@@ -65,5 +66,17 @@ export const cxpDocumentoController = {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.send(content);
     } catch (error) { next(error); }
+  },
+  async eligiblePayments(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await listDocumentoEligiblePayments(Number(req.params.id), cxpStringQuery(req, 'search'))); }
+    catch (error) { next(error); }
+  },
+  async applyPayment(req: Request, res: Response, next: NextFunction) {
+    try { res.status(201).json(await documentoPaymentOperations.apply(Number(req.params.id), req.body)); }
+    catch (error) { next(error); }
+  },
+  async reversePayment(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await documentoPaymentOperations.reverse(Number(req.params.id), Number(req.params.idAplicacion), req.body)); }
+    catch (error) { next(error); }
   },
 };

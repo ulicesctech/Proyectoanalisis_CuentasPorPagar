@@ -5,7 +5,7 @@ import { CxpError } from './errors';
 import { assertCxpDocumentoForApplication } from './documentos/documento.policy';
 
 /** Todos los cambios de saldo y la aplicación se confirman en una transacción. */
-export async function applyCxpMovement(connection: Connection, application: CxpRecord, reverse = false): Promise<CxpRecord> {
+export async function applyCxpMovement(connection: Connection, application: CxpRecord, reverse = false, expectedPaymentType?: string): Promise<CxpRecord> {
   const amount = Number(application.montoTotalAplicado);
   if (!Number.isFinite(amount) || amount <= 0) throw new CxpError('El monto aplicado debe ser mayor que cero');
   const references: Array<{ resource: CxpResource; id: number }> = [{ resource: 'documentos', id: Number(application.idDocumentoDestino) }];
@@ -30,6 +30,9 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
       if (source.moneda !== destination.moneda) throw new CxpError('El origen y el destino deben utilizar la misma moneda');
       const available = Number(application.idPago ? source.montoNoAplicado : source.saldoPendiente);
       if (amount > available) throw new CxpError('El monto supera el saldo disponible del origen');
+      if (application.idPago && expectedPaymentType && source.tipoPago !== expectedPaymentType) {
+        throw new CxpError('Selecciona un pago ordinario para esta aplicación', 409);
+      }
       if (application.idPago && !['EJECUTADO', 'CONFIRMADO', 'PARCIALMENTE_APLICADO', 'APLICADO', 'CONCILIADO'].includes(String(source.estado))) {
         throw new CxpError('Para aplicar el pago, este debe estar ejecutado o confirmado');
       }

@@ -11,6 +11,7 @@ import { Button, DataTable, TextArea } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { CxpDocumentoForm } from './components/DocumentoForm';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
+import { DocumentoPagoPanel } from './components/DocumentoPagoPanel';
 import { DocumentoFlow, DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
 
 type Expediente = {
@@ -47,6 +48,11 @@ type ApprovalContext = {
   impedimento: string | null;
 };
 
+const payableStates = new Set([
+  'APROBADA', 'CONTABILIZADA', 'PENDIENTE_PAGO', 'PROGRAMADA_PAGO',
+  'PARCIALMENTE_PAGADA', 'PARCIALMENTE_APLICADA', 'VENCIDA',
+]);
+
 const fieldLabels: Record<string, string> = {
   idProveedor: 'Proveedor', idSucursal: 'Sucursal', tipoDocumento: 'Tipo de documento',
   fechaDocumento: 'Fecha del documento', moneda: 'Moneda', uuidFiscal: 'UUID fiscal',
@@ -75,8 +81,14 @@ function nextStep(documento: CxpDocumento, lineas: CxpDocumentoDetalle[], hasDte
       return { title: 'Registrar la decisión requerida', description: 'La validación terminó. Identifica al responsable y completa las aprobaciones configuradas.',
         blocker: 'Mientras espera aprobación no puede recibir aplicaciones.' };
     case 'APROBADA':
-      return { title: 'Preparar pago o aplicación', description: 'Confirma el saldo, vencimiento y soporte antes de gestionar el pago o la aplicación.',
+      return { title: 'Aplicar un pago disponible', description: 'Selecciona un pago ejecutado o confirmado, indica el importe y confirma la aplicación.',
         blocker: Number(documento.saldoPendiente) <= 0 ? 'No hay saldo disponible para una nueva aplicación.' : null };
+    case 'PARCIALMENTE_PAGADA':
+    case 'PENDIENTE_PAGO':
+    case 'PROGRAMADA_PAGO':
+    case 'CONTABILIZADA':
+    case 'PARCIALMENTE_APLICADA':
+      return { title: 'Continuar con el saldo pendiente', description: 'Puedes aplicar otro pago disponible hasta cubrir el saldo.', blocker: null };
     case 'CON_DIFERENCIAS':
       return { title: 'Resolver diferencias', description: 'Compara cabecera, líneas y tributos para identificar la discrepancia.',
         blocker: 'Debe resolverse la diferencia antes de continuar.' };
@@ -84,7 +96,7 @@ function nextStep(documento: CxpDocumento, lineas: CxpDocumentoDetalle[], hasDte
       return { title: 'Resolver el bloqueo', description: 'Consulta el motivo en la cabecera y coordina su resolución.',
         blocker: 'El documento bloqueado no puede recibir aplicaciones.' };
     case 'VENCIDA':
-      return { title: 'Atender el vencimiento', description: 'Revisa el saldo y la fecha de vencimiento; coordina la gestión de pago correspondiente.',
+      return { title: 'Atender el vencimiento', description: 'Revisa el saldo y aplica un pago disponible para reducirlo.',
         blocker: null };
     case 'ANULADA':
       return { title: 'Conservar historial', description: 'El documento fue anulado.',
@@ -123,6 +135,11 @@ export function CxpDocumentoExpedientePage() {
   const [observation, setObservation] = useState('');
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [reversingId, setReversingId] = useState<number | null>(null);
+  const [reverterId, setReverterId] = useState('');
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversalBusy, setReversalBusy] = useState(false);
+  const [reversalError, setReversalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(location.state?.created ? 'Documento recibido. Adjunta el DTE y completa sus líneas y tributos antes de validarlo.' : null);
 
   useEffect(() => {
@@ -231,6 +248,22 @@ export function CxpDocumentoExpedientePage() {
     } finally { setDecisionBusy(false); }
   };
 
+  const reversePayment = async () => {
+    if (!id || !reversingId || !reverterId || !reversalReason.trim() || reversalBusy) return;
+    if (!window.confirm('¿Confirmas la reversión de esta aplicación? El saldo del documento y del pago se restaurará.')) return;
+    setReversalBusy(true); setReversalError(null);
+    try {
+      await apiClient.post(`/cxp/documentos/${id}/aplicaciones/${reversingId}/revertir`, {
+        revertidoPor: Number(reverterId), motivoReverso: reversalReason.trim(),
+      });
+      setReversingId(null); setReverterId(''); setReversalReason('');
+      setNotice('Aplicación revertida. Se actualizaron los saldos del documento y del pago.');
+      setRefresh(value => value + 1);
+    } catch (reason) {
+      setReversalError(reason instanceof ApiError ? reason.message : 'No se pudo revertir la aplicación.');
+    } finally { setReversalBusy(false); }
+  };
+
   const document = expediente?.documento;
   const hasDte = dteFiles.some(file => file.categoria === 'DTE' && file.disponible);
   const guide = document ? nextStep(document, expediente.lineas, hasDte) : null;
@@ -327,6 +360,11 @@ export function CxpDocumentoExpedientePage() {
             </div>}
             {decisionError && <p role="alert" className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800">{decisionError}</p>}
           </div>}
+          {payableStates.has(document.estado) && Number(document.saldoPendiente) > 0 &&
+            <DocumentoPagoPanel documento={document} onApplied={application => {
+              setNotice(`Pago aplicado. El saldo pendiente es ${formatDocumentoMoney(application.saldoPosterior, document.moneda)}.`);
+              setRefresh(value => value + 1);
+            }} />}
           {validationError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mt-4 text-sm text-red-800">
             <p className="font-semibold">{validationError}</p>
             {validationIssues.length > 0 && <ul className="list-disc pl-5 mt-2 space-y-1">
@@ -424,8 +462,29 @@ export function CxpDocumentoExpedientePage() {
               { header: 'Fecha', cell: ({ row }: { row: CxpAplicacion }) => formatDocumentoDate(row.fechaAplicacion) },
               { header: 'Monto', align: 'right', cell: ({ row }: { row: CxpAplicacion }) => formatDocumentoMoney(row.montoTotalAplicado, currency) },
               { header: 'Estado', cell: ({ row }: { row: CxpAplicacion }) => readableState(row.estado) },
+              { header: 'Saldo después', align: 'right', cell: ({ row }: { row: CxpAplicacion }) => formatDocumentoMoney(row.saldoPosterior, currency) },
+              { header: 'Acción', cell: ({ row }: { row: CxpAplicacion }) => row.estado === 'APLICADA' && row.tipoAplicacion === 'PAGO'
+                ? <Button variant="secondary" onClick={() => { setReversingId(row.idAplicacion); setReversalError(null); }}>Revertir</Button> : '—' },
             ]} />
         </section>
+
+        <Modal isOpen={reversingId !== null} onClose={() => { if (!reversalBusy) setReversingId(null); }} title="Revertir aplicación de pago" size="md">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">La aplicación #{reversingId} quedará en el historial y se restaurarán los saldos.</p>
+            <DocumentoCatalogPicker id="reversal-actor" label="Usuario que registra la reversión" catalog="usuarios"
+              value={reverterId} onChange={setReverterId} required />
+            <TextArea label="Motivo de reversión" value={reversalReason}
+              onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setReversalReason(event.target.value)}
+              rows={3} maxLength={1000} />
+            {reversalError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{reversalError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" disabled={reversalBusy} onClick={() => setReversingId(null)}>Cancelar</Button>
+              <Button variant="danger" disabled={!reverterId || !reversalReason.trim() || reversalBusy} onClick={reversePayment}>
+                {reversalBusy ? 'Revirtiendo…' : 'Confirmar reversión'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
         <Modal isOpen={editing} onClose={() => setEditing(false)} title="Editar cabecera recibida" size="lg">
           {editing && <CxpDocumentoForm record={document as unknown as CxpRecord} onCancel={() => setEditing(false)} onSuccess={() => {
