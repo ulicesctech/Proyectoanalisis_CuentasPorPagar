@@ -44,6 +44,8 @@ export function eligible(documents: CxpRecord[]) {
       !(document.tipoDocumento === 'FACTURA_ESPECIAL' && document.estado === 'APROBADA'),
       'La factura especial debe emitirse antes de iniciar un proceso de pago',
     );
+    requireThat(document.tipoDocumento !== 'GASTO_CAJA_CHICA',
+      'El gasto de caja chica se repone con un pago de reposición, fuera del proceso de obligaciones');
     requireThat(
       Number.isFinite(Number(document.saldoPendiente)) && Number(document.saldoPendiente) > 0,
       'El documento no tiene saldo disponible',

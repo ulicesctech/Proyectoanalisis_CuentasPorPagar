@@ -103,6 +103,29 @@ test('una factura especial solo admite pagos después de emitirse', async () => 
   assert.equal(issued.rows.get('CXP_DOCUMENTO:1')?.ESTADO, 'PARCIALMENTE_PAGADA');
 });
 
+test('caja chica solo se repone con pago de reposición y la reversión ajusta el fondo', async () => {
+  const db = memoryConnection({
+    'CXP_DOCUMENTO:1': { ...documentRow(), TIPO_DOCUMENTO: 'GASTO_CAJA_CHICA', ID_COMPROMISO: 3 },
+    'CXP_PAGO:2': paymentRow(),
+    'CXP_COMPROMISO:3': {
+      ID_COMPROMISO: 3, TIPO_COMPROMISO: 'FONDO_CAJA_CHICA',
+      ESTADO: 'ACTIVO', MONEDA: 'GTQ', MONTO_TOTAL: 500, SALDO_CAPITAL: 375,
+    },
+  });
+  await assert.rejects(applyCxpMovement(db.connection, paymentApplication), { status: 409 });
+  assert.equal(db.writes.length, 0);
+  db.rows.get('CXP_PAGO:2')!.TIPO_PAGO = 'REPOSICION_CAJA';
+  db.rows.get('CXP_PAGO:2')!.ID_PROVEEDOR = 8;
+  await assert.rejects(applyCxpMovement(db.connection, paymentApplication), { status: 400 });
+  db.rows.get('CXP_PAGO:2')!.ID_PROVEEDOR = 7;
+  await applyCxpMovement(db.connection, paymentApplication);
+  assert.equal(db.rows.get('CXP_COMPROMISO:3')?.SALDO_CAPITAL, 415);
+  assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 60);
+  await applyCxpMovement(db.connection, paymentApplication, true);
+  assert.equal(db.rows.get('CXP_COMPROMISO:3')?.SALDO_CAPITAL, 375);
+  assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 100);
+});
+
 test('un crédito de origen no aprobado y un destino sin saldo no producen escrituras', async () => {
   const credit = memoryConnection({
     'CXP_DOCUMENTO:1': documentRow(),

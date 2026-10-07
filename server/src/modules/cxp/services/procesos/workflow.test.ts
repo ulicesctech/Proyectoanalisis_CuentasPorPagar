@@ -15,3 +15,13 @@ test('el proceso no reserva facturas especiales aprobadas antes de emitirlas', (
   assert.equal(eligible([{ ...document, estado: 'PENDIENTE_PAGO' }]).idDocumento, 1);
   assert.equal(eligible([{ ...document, tipoDocumento: 'FACTURA' }]).idDocumento, 1);
 });
+
+test('el proceso ordinario no reserva gastos de caja chica', () => {
+  const document: CxpRecord = {
+    idDocumento: 11, idProveedor: 2, idSucursal: 3, moneda: 'GTQ',
+    naturaleza: 'D', estado: 'APROBADA', posibleDuplicado: 'N',
+    saldoPendiente: 125, tipoDocumento: 'GASTO_CAJA_CHICA',
+  };
+  assert.throws(() => eligible([document]), { status: 409 });
+  assert.equal(eligible([{ ...document, tipoDocumento: 'FACTURA' }]).idDocumento, 11);
+});

@@ -6,7 +6,7 @@ import {
   listActiveDocumentoApprovalRules, listDocumentoApprovalDecisions,
   type ApprovalActor, type DocumentoApprovalDecision, type DocumentoApprovalRule,
 } from '../../repositories/documentos/documentoApproval.repository';
-import type { CxpRecord } from '@erp/contracts';
+import { cxpMoneySum, type CxpRecord } from '@erp/contracts';
 import { CxpError } from '../errors';
 
 export type DocumentoApprovalContext = {
@@ -145,6 +145,21 @@ async function loadApprovalContext(connection: Connection, idDocumento: number, 
     context: buildDocumentoApprovalContext(documento, rules, decisions, actor, actorId !== undefined) };
 }
 
+export async function applyCajaChicaFundOnApproval(connection: Connection, documento: CxpRecord): Promise<void> {
+  if (!documento.idCompromiso || documento.tipoDocumento !== 'GASTO_CAJA_CHICA') return;
+  const fundRepo = createCxpRepository('compromisos').bind(connection);
+  const fund = await fundRepo.findById(Number(documento.idCompromiso), true);
+  if (!fund || fund.tipoCompromiso !== 'FONDO_CAJA_CHICA' || fund.estado !== 'ACTIVO') {
+    throw new CxpError('El fondo de caja chica debe estar activo', 409);
+  }
+  if (fund.moneda !== documento.moneda) throw new CxpError('La moneda del gasto o reposición debe coincidir con el fondo', 409);
+  const amount = Number(documento.totalNeto);
+  if (!Number.isFinite(amount) || amount <= 0) throw new CxpError('El importe de caja chica debe ser positivo', 409);
+  const balance = cxpMoneySum(Number(fund.saldoCapital), -amount);
+  if (balance < 0) throw new CxpError('El gasto supera el saldo disponible del fondo', 409);
+  await fundRepo.update(Number(fund.idCompromiso), { saldoCapital: balance });
+}
+
 export async function readDocumentoApprovalContext(idDocumento: number, actorId?: number): Promise<DocumentoApprovalContext> {
   positiveId(idDocumento, 'El documento');
   if (actorId !== undefined) positiveId(actorId, 'El usuario aprobador');
@@ -185,6 +200,7 @@ export function createDocumentoApprovalOperation(run: typeof withCxpTransaction 
         const updatedDecisions = await listDocumentoApprovalDecisions(connection, idDocumento);
         const after = buildDocumentoApprovalContext(loaded.documento, loaded.rules, updatedDecisions, loaded.actor, true);
         if (after.reglas.length > 0 && after.reglas.every(item => item.estado === 'COMPLETA')) {
+          await applyCajaChicaFundOnApproval(connection, loaded.documento);
           await createCxpRepository('documentos').bind(connection).update(idDocumento, {
             estado: 'APROBADA', modificadoPor: input.idUsuarioAprobador,
           });

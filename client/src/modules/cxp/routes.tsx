@@ -32,6 +32,7 @@ import { CxpReglaAprobacionPage } from './control/ReglaAprobacionPage';
 import { CxpAprobacionPage } from './control/AprobacionPage';
 import { CxpEventoPage } from './control/EventoPage';
 import { CxpArchivoPage } from './control/ArchivoPage';
+import { CxpProveedorPage } from './configuracion/ProveedorPage';
 
 // --- Conciliaciones ---
 import { CxpConciliacionProveedorPage } from './conciliaciones/ConciliacionProveedorPage';
@@ -47,6 +48,7 @@ const cxpPages: RouteObject[] = [
   // --- Configuración ---
   { path: '/cxp/parametros', element: <CxpParametroPage /> },
   { path: '/cxp/periodos', element: <CxpPeriodoPage /> },
+  { path: '/cxp/proveedores', element: <CxpProveedorPage /> },
   { path: '/cxp/cuentas-bancarias', element: <CxpCuentaBancariaPage /> },
   { path: '/cxp/compromisos', element: <CxpCompromisoPage /> },
 

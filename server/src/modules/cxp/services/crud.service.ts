@@ -1,7 +1,7 @@
 import { assertOutsideProcess } from '../repositories/proceso-guard.repository';
-import type { Connection } from 'oracledb';
+import oracledb, { type Connection } from 'oracledb';
 import {
-  CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord,
+  CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord, cxpMoneySum,
   type CxpListQuery, type CxpRecord, type CxpResource,
 } from '@erp/contracts';
 import { createCxpRepository, withCxpTransaction, type CxpRepository } from '../repositories/crud.repository';
@@ -61,6 +61,36 @@ async function requiredRow(connection: Connection, resource: CxpResource, id: nu
 }
 
 async function validateRelations(connection: Connection, resource: CxpResource, input: CxpRecord): Promise<void> {
+  if (resource === 'documentos' && input.tipoDocumento === 'GASTO_CAJA_CHICA') {
+    if (!input.idCompromiso) throw new CxpError('El gasto de caja chica debe asociarse a un fondo de caja chica (idCompromiso)');
+    const fund = await requiredRow(connection, 'compromisos', Number(input.idCompromiso), true);
+    if (fund.tipoCompromiso !== 'FONDO_CAJA_CHICA') throw new CxpError('El compromiso debe ser de tipo FONDO_CAJA_CHICA');
+    if (fund.estado !== 'ACTIVO') throw new CxpError('El fondo de caja chica debe estar activo', 409);
+    if (fund.moneda !== input.moneda) throw new CxpError('El gasto debe utilizar la moneda del fondo', 409);
+    if (Number(input.totalNeto) > Number(fund.saldoCapital)) throw new CxpError('El gasto supera el saldo disponible del fondo', 409);
+  }
+  if (resource === 'documentos' && input.tipoDocumento === 'REEMBOLSO' && input.idCompromiso) {
+    if (!input.idDocumentoRelacionado) throw new CxpError('La reposición de caja chica debe indicar el gasto relacionado', 409);
+    const gastoOriginal = await requiredRow(connection, 'documentos', Number(input.idDocumentoRelacionado), true);
+    if (gastoOriginal.tipoDocumento !== 'GASTO_CAJA_CHICA') throw new CxpError('La reposición solo puede referenciar un documento de gasto de caja chica');
+    if (gastoOriginal.idCompromiso !== input.idCompromiso) {
+      throw new CxpError('El gasto a reponer no pertenece al fondo de caja chica indicado');
+    }
+    if (gastoOriginal.estado !== 'APROBADA') throw new CxpError('El gasto debe estar aprobado antes de reponerse', 409);
+    if (Number(input.totalNeto) !== Number(gastoOriginal.totalNeto)) throw new CxpError('La reposición debe coincidir con el importe del gasto', 409);
+    const { rows } = await connection.execute<{ CNT: number }>(
+      `SELECT COUNT(*) AS CNT FROM CXP_DOCUMENTO
+       WHERE TIPO_DOCUMENTO = 'REEMBOLSO'
+         AND ID_DOCUMENTO_RELACIONADO = :gastoId
+         AND ESTADO <> 'ANULADA'
+         AND (:selfId IS NULL OR ID_DOCUMENTO <> :selfId)`,
+      { gastoId: Number(input.idDocumentoRelacionado), selfId: input.idDocumento ?? null },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    if (Number(rows?.[0]?.CNT ?? 0) >= 1) {
+      throw new CxpError('Este gasto ya cuenta con una reposición activa. No se permite reponer dos veces el mismo gasto.', 400);
+    }
+  }
   if (resource === 'pagos' || resource === 'lotes-pago') {
     const origin = await requiredRow(connection, 'cuentas-bancarias', Number(input.idCuentaOrigen));
     if (origin.tipoTitular !== 'EMPRESA') throw new CxpError('La cuenta de origen debe pertenecer a una empresa');
@@ -138,6 +168,12 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         diasCredito: Object.hasOwn(rawRecord, 'diasCredito') ? rawRecord.diasCredito : undefined,
       };
       let input = checked(resource, schema.create.parse(raw) as CxpRecord);
+      if (resource === 'compromisos' && input.tipoCompromiso === 'FONDO_CAJA_CHICA') {
+        if (Object.hasOwn(rawRecord, 'saldoCapital') && Number(input.saldoCapital) !== Number(input.montoTotal)) {
+          throw new CxpError('El fondo debe iniciar con el saldo igual al monto total', 409);
+        }
+        input.saldoCapital = input.montoTotal;
+      }
       if (resource === 'pagos' && String(input.codigoPago).startsWith('CP-')) {
         throw new CxpError('El código CP- está reservado para el proceso de pagos', 409);
       }
@@ -198,6 +234,11 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
           throw new CxpError('Los adjuntos de documentos se conservan mediante la operación de carga', 409);
         }
         if (resource === 'documentos') assertCxpDocumentoCrudChange(current, patch);
+        if (resource === 'compromisos' && current.tipoCompromiso === 'FONDO_CAJA_CHICA' &&
+            (Object.hasOwn(patch, 'saldoCapital') || Object.hasOwn(patch, 'montoTotal') ||
+             Object.hasOwn(patch, 'tipoCompromiso'))) {
+          throw new CxpError('El saldo y monto del fondo se administran mediante gastos y reposiciones controladas', 409);
+        }
         if (resource === 'pagos') {
           if (['estado', 'ejecutadoPor', 'fechaPago', 'conciliadoPor'].some(field =>
             Object.hasOwn(patch, field) && patch[field] !== current[field])) {
@@ -240,7 +281,6 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
           await applyCxpMovement(connection, current, true);
-          // Se conserva la fotografía del movimiento original, no la de su reversión.
         }
         const changes = Object.fromEntries(Object.entries(input).filter(([key, value]) => key !== entity.idField && value !== current[key]));
         await transaction.update(id, changes);
@@ -266,6 +306,11 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         }
         if (deletable[resource] && !deletable[resource]!.includes(String(current.estado))) throw new CxpError('El registro ya fue confirmado o cerrado y debe conservarse. Utiliza su anulación o reversión cuando corresponda', 409);
         if (Number(current.montoAplicado) > 0) throw new CxpError('El registro tiene aplicaciones; revierte esas operaciones antes de continuar', 409);
+        if (resource === 'compromisos' && current.tipoCompromiso === 'FONDO_CAJA_CHICA') {
+          const related = await connection.execute(
+            'SELECT 1 FROM CXP_DOCUMENTO WHERE ID_COMPROMISO = :id FETCH FIRST 1 ROW ONLY', { id });
+          if (related.rows?.length) throw new CxpError('El fondo tiene gastos o reposiciones y debe conservarse', 409);
+        }
         if (['documentos-detalle', 'documentos-tributos'].includes(resource)) {
           const parent = await requiredRow(connection, 'documentos', Number(current.idDocumento), true);
           assertCxpDocumentoComponentsEditable(parent);

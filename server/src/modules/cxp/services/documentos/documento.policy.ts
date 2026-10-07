@@ -14,6 +14,7 @@ const creditApplicationStates = new Set(['APROBADA', 'CONTABILIZADA', 'PARCIALME
 
 const protectedFields = [
   'idProveedor', 'tipoDocumento', 'naturaleza', 'origenIngreso', 'tipoRegistro',
+  'idCompromiso', 'idDocumentoRelacionado',
   'serie', 'numeroDocumento', 'uuidFiscal', 'nitEmisor', 'hashOrigen',
   'moneda', 'tipoCambio',
   'idCondicionCredito', 'fechaDocumento', 'fechaVencimiento', 'diasCredito',

@@ -23,6 +23,19 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
   const source = application.idPago ? rows.get(`pagos:${application.idPago}`)! : application.idDocumentoOrigen ? rows.get(`documentos:${application.idDocumentoOrigen}`)! : null;
   if (!reverse) {
     assertCxpDocumentoForApplication(destination, 'destino');
+    if (destination.tipoDocumento === 'GASTO_CAJA_CHICA' && !destination.idCompromiso) {
+      throw new CxpError('El gasto de caja chica no tiene un fondo asociado', 409);
+    }
+    if (destination.tipoDocumento === 'GASTO_CAJA_CHICA' &&
+        (!application.idPago || source?.tipoPago !== 'REPOSICION_CAJA')) {
+      throw new CxpError('El gasto de caja chica solo admite un pago de reposición', 409);
+    }
+    if (destination.tipoDocumento !== 'GASTO_CAJA_CHICA' && source?.tipoPago === 'REPOSICION_CAJA') {
+      throw new CxpError('El pago de reposición solo corresponde a un gasto de caja chica', 409);
+    }
+    if (destination.tipoDocumento === 'GASTO_CAJA_CHICA' && Number(destination.saldoPendiente) <= 0) {
+      throw new CxpError('El gasto de caja chica ya fue saldado', 409);
+    }
     if (amount > Number(destination.saldoPendiente)) throw new CxpError('El monto supera el saldo pendiente del documento');
     if (source) {
       if (application.idDocumentoOrigen) assertCxpDocumentoForApplication(source, 'origen');
@@ -49,6 +62,15 @@ export async function applyCxpMovement(connection: Connection, application: CxpR
   await createCxpRepository('documentos').bind(connection).update(Number(destination.idDocumento), {
     montoAplicado: applied, saldoPendiente: updatedDestination.saldoPendiente, estado: destinationState,
   });
+  if (destination.tipoDocumento === 'GASTO_CAJA_CHICA' && destination.idCompromiso) {
+    const fundRepo = createCxpRepository('compromisos').bind(connection);
+    const fund = await fundRepo.findById(Number(destination.idCompromiso), true);
+    if (!fund || fund.tipoCompromiso !== 'FONDO_CAJA_CHICA') throw new CxpError('El fondo de caja chica no existe', 409);
+    if (!reverse && fund.estado !== 'ACTIVO') throw new CxpError('El fondo de caja chica debe estar activo', 409);
+    const restored = cxpMoneySum(Number(fund.saldoCapital), direction);
+    if (restored < 0 || restored > Number(fund.montoTotal)) throw new CxpError('La reposición excede el saldo autorizado del fondo', 409);
+    await fundRepo.update(Number(fund.idCompromiso), { saldoCapital: restored });
+  }
   if (source) {
     const appliedSource = cxpMoneySum(Number(source.montoAplicado), direction);
     if (appliedSource < 0) throw new CxpError('El saldo del origen no permite esta reversión', 409);
