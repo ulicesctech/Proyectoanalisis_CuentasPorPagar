@@ -50,6 +50,18 @@ export const apiClient = {
   patch: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  uploadDte: <T>(path: string, file: File) => request<T>(path, {
+    method: 'POST', body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+  }),
+  async download(path: string): Promise<Blob> {
+    const response = await fetch(`${BASE_URL}${path}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new ApiError(body?.error ?? `Error ${response.status}`, response.status, body?.details);
+    }
+    return response.blob();
+  },
 };
 
 /** Construye un query string ignorando valores undefined/vacíos. */

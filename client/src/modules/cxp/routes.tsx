@@ -1,6 +1,7 @@
 import { ProcesosPagoPage } from './procesos/ProcesosPagoPage';
 // client/src/modules/cxp/routes.tsx
 import { Navigate, type RouteObject } from 'react-router-dom';
+import MainLayout from '../../layouts/MainLayout';
 
 // --- Configuración ---
 import { CxpParametroPage } from './configuracion/ParametroPage';
@@ -10,6 +11,8 @@ import { CxpCompromisoPage } from './configuracion/CompromisoPage';
 
 // --- Documentos ---
 import { CxpDocumentoPage } from './documentos/DocumentoPage';
+import { CxpDocumentoRegistroPage } from './documentos/DocumentoRegistroPage';
+import { CxpDocumentoExpedientePage } from './documentos/DocumentoExpedientePage';
 import { CxpDocumentoDetallePage } from './documentos/DocumentoDetallePage';
 import { CxpDocumentoTributoPage } from './documentos/DocumentoTributoPage';
 
@@ -29,13 +32,12 @@ import { CxpConciliacionProveedorPage } from './conciliaciones/ConciliacionProve
 import { CxpConciliacionProveedorDetallePage } from './conciliaciones/ConciliacionProveedorDetallePage';
 import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 
-export const cxpRoutes: RouteObject[] = [
+const cxpPages: RouteObject[] = [
   { path: '/cxp/procesos-pago', element: <Navigate to="/cxp/contrasenas" replace /> },
   { path: '/cxp/contrasenas', element: <ProcesosPagoPage key="contrasenas" bandeja="contrasenas" /> },
   { path: '/cxp/autorizaciones', element: <ProcesosPagoPage key="autorizaciones" bandeja="autorizaciones" /> },
   { path: '/cxp/cheques', element: <ProcesosPagoPage key="cheques" bandeja="cheques" /> },
   { path: '/cxp', element: <Navigate to="/cxp/parametros" replace /> },
-
   // --- Configuración ---
   { path: '/cxp/parametros', element: <CxpParametroPage /> },
   { path: '/cxp/periodos', element: <CxpPeriodoPage /> },
@@ -44,6 +46,8 @@ export const cxpRoutes: RouteObject[] = [
 
   // --- Documentos ---
   { path: '/cxp/documentos', element: <CxpDocumentoPage /> },
+  { path: '/cxp/documentos/nuevo', element: <CxpDocumentoRegistroPage /> },
+  { path: '/cxp/documentos/:id', element: <CxpDocumentoExpedientePage /> },
   { path: '/cxp/documentos-detalle', element: <CxpDocumentoDetallePage /> },
   { path: '/cxp/documentos-tributos', element: <CxpDocumentoTributoPage /> },
 
@@ -65,3 +69,7 @@ export const cxpRoutes: RouteObject[] = [
   { path: '/cxp/conciliaciones-proveedor-detalle', element: <CxpConciliacionProveedorDetallePage /> },
   { path: '/cxp/conciliaciones-pago', element: <CxpConciliacionPagoPage /> },
 ];
+export const cxpRoutes: RouteObject[] = cxpPages.map(route => ({
+  ...route,
+  element: <MainLayout>{route.element}</MainLayout>,
+}));

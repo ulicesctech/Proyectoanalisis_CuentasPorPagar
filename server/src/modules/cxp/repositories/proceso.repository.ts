@@ -488,7 +488,8 @@ function bind(connection: Connection): ProcesoTx {
              JOIN CXP_PAGO P ON P.ID_PAGO = A.ID_PAGO
             WHERE A.ID_DOCUMENTO_DESTINO = :documentId
               AND A.TIPO_APLICACION = 'PAGO'
-              AND A.ESTADO IN ('PENDIENTE', 'APLICADA')
+              AND (A.ESTADO = 'PENDIENTE'
+                   OR (A.ESTADO = 'APLICADA' AND P.CODIGO_PAGO LIKE 'CP-%'))
               AND P.ESTADO NOT IN ('RECHAZADO', 'DEVUELTO', 'ANULADO')
               AND P.ID_PAGO <> :paymentId
             FETCH FIRST 1 ROW ONLY`,
@@ -693,7 +694,8 @@ export const procesoStore: ProcesoStore = {
                 JOIN CXP_PAGO P ON P.ID_PAGO = A.ID_PAGO
                WHERE A.ID_DOCUMENTO_DESTINO = D.ID_DOCUMENTO
                  AND A.TIPO_APLICACION = 'PAGO'
-                 AND A.ESTADO IN ('PENDIENTE', 'APLICADA')
+                 AND (A.ESTADO = 'PENDIENTE'
+                      OR (A.ESTADO = 'APLICADA' AND P.CODIGO_PAGO LIKE 'CP-%'))
                  AND P.ESTADO NOT IN ('RECHAZADO', 'DEVUELTO', 'ANULADO')
             )
           ORDER BY D.ID_DOCUMENTO DESC
