@@ -260,6 +260,14 @@ test('un registro inicial válido entra como RECIBIDO', async () => {
   assert.deepEqual(db.writes, ['INSERT']);
 });
 
+test('el CRUD común no registra facturas especiales fuera de su flujo controlado', async () => {
+  const db = memory();
+  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
+    ...registration, tipoDocumento: 'FACTURA_ESPECIAL',
+  }), { status: 409 });
+  assert.deepEqual(db.writes, []);
+});
+
 test('un documento débito admite vencimiento igual a su fecha', async () => {
   const db = memory();
   const result = await createCxpService(cxpDocumentoRepository, db.run).create({

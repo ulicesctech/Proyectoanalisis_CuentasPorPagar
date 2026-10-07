@@ -687,6 +687,7 @@ export const procesoStore: ProcesoStore = {
             AND D.NATURALEZA = 'D'
             AND D.POSIBLE_DUPLICADO = 'N'
             AND D.ESTADO IN ('APROBADA', 'CONTABILIZADA', 'PENDIENTE_PAGO', 'PARCIALMENTE_PAGADA', 'VENCIDA')
+            AND NOT (D.TIPO_DOCUMENTO = 'FACTURA_ESPECIAL' AND D.ESTADO = 'APROBADA')
             AND D.SALDO_PENDIENTE > 0
             AND NOT EXISTS (
               SELECT 1

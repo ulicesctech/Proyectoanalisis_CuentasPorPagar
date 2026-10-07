@@ -4,6 +4,9 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
+/** Base del API para descargas de archivos (p. ej. PDF), que no pasan por apiClient (JSON). */
+export const API_BASE_URL = BASE_URL;
+
 export class ApiError extends Error {
   constructor(
     message: string,

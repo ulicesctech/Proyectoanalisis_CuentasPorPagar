@@ -79,6 +79,9 @@ export function assertCxpDocumentoForApplication(documento: CxpRecord, role: 'de
   if (documento.naturaleza !== expectedNature || !allowedStates.has(String(documento.estado))) {
     throw new CxpError(`El documento de ${role} debe estar aprobado y disponible para esta aplicación`, 409);
   }
+  if (role === 'destino' && documento.tipoDocumento === 'FACTURA_ESPECIAL' && documento.estado === 'APROBADA') {
+    throw new CxpError('La factura especial debe emitirse antes de recibir pagos', 409);
+  }
   const balance = Number(documento.saldoPendiente);
   if (!Number.isFinite(balance) || balance <= 0) {
     throw new CxpError(`El documento de ${role} no tiene saldo disponible`, 409);

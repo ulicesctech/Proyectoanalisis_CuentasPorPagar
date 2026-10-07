@@ -85,6 +85,24 @@ test('los estados previos, finales y bloqueados rechazan la aplicación sin escr
   }
 });
 
+test('una factura especial solo admite pagos después de emitirse', async () => {
+  const approved = memoryConnection({
+    'CXP_DOCUMENTO:1': { ...documentRow('APROBADA'), TIPO_DOCUMENTO: 'FACTURA_ESPECIAL' },
+    'CXP_PAGO:2': paymentRow(),
+  });
+  await assert.rejects(applyCxpMovement(approved.connection, paymentApplication),
+    { status: 409, message: 'La factura especial debe emitirse antes de recibir pagos' });
+  assert.equal(approved.writes.length, 0);
+
+  const issued = memoryConnection({
+    'CXP_DOCUMENTO:1': { ...documentRow('PENDIENTE_PAGO'), TIPO_DOCUMENTO: 'FACTURA_ESPECIAL' },
+    'CXP_PAGO:2': paymentRow(),
+  });
+  await applyCxpMovement(issued.connection, paymentApplication);
+  assert.equal(issued.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 60);
+  assert.equal(issued.rows.get('CXP_DOCUMENTO:1')?.ESTADO, 'PARCIALMENTE_PAGADA');
+});
+
 test('un crédito de origen no aprobado y un destino sin saldo no producen escrituras', async () => {
   const credit = memoryConnection({
     'CXP_DOCUMENTO:1': documentRow(),

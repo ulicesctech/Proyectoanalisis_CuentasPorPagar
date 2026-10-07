@@ -9,6 +9,8 @@ import { CXP_TABLES } from '../repositories/definitions';
 import { listDocumentoArchivos } from '../repositories/documentos/documentoArchivo.repository';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { applyCxpMovement } from './application.service';
+import { checkApprovals, checkInitialState, checkStateChange, resetApprovals } from './workflow.service';
+import { checkFacturaEspecialGuard } from './documentos/facturaEspecial.guard';
 import { CxpError } from './errors';
 import {
   assertCxpDocumentoCalendarDates, assertCxpDocumentoCreateState, assertCxpDocumentoCrudChange,
@@ -154,8 +156,10 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         throw new CxpError('Las decisiones de documentos requieren la operación controlada de aprobación', 409);
       }
       if (resource === 'aplicaciones' && input.estado === 'REVERTIDA') throw new CxpError('Una aplicación nueva debe registrarse pendiente, aplicada o cancelada');
+      checkInitialState(resource, input);
       try { return await run(async connection => {
         await assertOutsideProcess(connection, resource, input);
+        await checkFacturaEspecialGuard(connection, resource, null, input);
         if (resource === 'documentos') {
           input = await snapshotDocumentoDueDate(connection, input, suppliedTerms);
           assertCxpDocumentoCalendarDates(input);
@@ -185,6 +189,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
         await assertOutsideProcess(connection, resource, current);
+        await checkFacturaEspecialGuard(connection, resource, current, patch);
         if (resource === 'aprobaciones' && (current.idDocumento != null || patch.idDocumento != null)) {
           throw new CxpError('Las decisiones de documentos no se modifican mediante el CRUD común', 409);
         }
@@ -210,6 +215,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         }
         checkChange(resource, current, patch);
         let input = checked(resource, { ...current, ...patch });
+        checkStateChange(resource, current, input);
         await assertOutsideProcess(connection, resource, input);
         if (resource === 'documentos') {
           const conditionChanged = Object.hasOwn(patch, 'idCondicionCredito') && patch.idCondicionCredito !== current.idCondicionCredito;
@@ -229,6 +235,8 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
           documentInput = input;
           await assertNoDocumentoDuplicate(connection, input, id);
         }
+        await checkApprovals(connection, resource, id, input, current.estado);
+        await resetApprovals(connection, resource, id, current.estado, input.estado);
         if (resource === 'aplicaciones' && current.estado !== 'APLICADA' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         if (resource === 'aplicaciones' && current.estado === 'APLICADA' && input.estado === 'REVERTIDA') {
           await applyCxpMovement(connection, current, true);
@@ -246,6 +254,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
         await assertOutsideProcess(connection, resource, current);
+        await checkFacturaEspecialGuard(connection, resource, current, null);
         if (resource === 'aprobaciones' && current.idDocumento != null) {
           throw new CxpError('Las decisiones de documentos deben conservarse como historial', 409);
         }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, validateCxpRecord,
+  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
 } from '@erp/contracts';
 import { apiClient, ApiError } from '../../../shared/api';
@@ -17,11 +17,9 @@ export interface CxpFormProps {
 
 const sectionsOrder = ['Datos generales', 'Relaciones', 'Fechas', 'Importes y cantidades', 'Estado y control', 'Información adicional', 'Auditoría'];
 const optionLabel = (option: string) => option === 'S' ? 'Sí' : option === 'N' ? 'No' : option.replace(/_/g, ' ');
+// Misma fecha de negocio que valida el servidor (zona CXP_TIME_ZONE), no la del navegador.
 function localDate(timestamp = false): string {
-  const date = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  return timestamp ? `${day}T${pad(date.getHours())}:${pad(date.getMinutes())}:00` : day;
+  return timestamp ? `${cxpNow().slice(0, 16)}:00` : cxpToday();
 }
 
 /**
@@ -167,7 +165,12 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       return <RelationSelect key={field.name} {...props} catalog={field.lookup} readOnly={locked}
         filterField={filterField} filterValue={filterValue} onChange={next => change(field.name, next)} />;
     }
-    if (field.options) return <Select key={field.name} {...props} placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...field.options.map(option => ({ value: option, label: optionLabel(option) }))]}
+    // El estado solo ofrece los cambios que el flujo de trabajo permite desde el estado actual.
+    const allowed = field.name === 'estado' ? cxpAllowedStates(resource, record?.estado as string | undefined) : null;
+    const choices = field.options?.filter(option => (!allowed || allowed.includes(option))
+      // Las facturas especiales se registran en su propio módulo (flujo de emisión y constancia).
+      && !(resource === 'documentos' && field.name === 'tipoDocumento' && option === 'FACTURA_ESPECIAL' && record?.tipoDocumento !== option));
+    if (choices) return <Select key={field.name} {...props} placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...choices.map(option => ({ value: option, label: optionLabel(option) }))]}
       onChange={(event: React.ChangeEvent<HTMLSelectElement>) => change(field.name, event.target.value)} />;
     if (field.type === 'textarea') return <TextArea key={field.name} {...props} rows={4} maxLength={field.maxLength ?? 30000}
       placeholder={placeholderFor(field)}

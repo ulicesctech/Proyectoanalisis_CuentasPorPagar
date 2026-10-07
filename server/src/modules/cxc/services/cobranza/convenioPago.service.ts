@@ -53,8 +53,10 @@ function generarPlanDeCuotas(
       ? Math.round((montoDeuda - montoAcumuladoPrevio) * 100) / 100
       : montoBase;
 
-    const fechaVencimiento = new Date(fechaBase);
-    fechaVencimiento.setMonth(fechaVencimiento.getMonth() + numeroCuota);
+    // Mismo día del mes siguiente; si no existe (31 → febrero), el último día de ese mes.
+    const mes = fechaBase.getUTCMonth() + numeroCuota;
+    const ultimoDia = new Date(Date.UTC(fechaBase.getUTCFullYear(), mes + 1, 0)).getUTCDate();
+    const fechaVencimiento = new Date(Date.UTC(fechaBase.getUTCFullYear(), mes, Math.min(fechaBase.getUTCDate(), ultimoDia)));
 
     return {
       numeroCuota,

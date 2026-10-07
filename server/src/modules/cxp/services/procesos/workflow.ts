@@ -24,7 +24,7 @@ function totalOf(documents: CxpRecord[]) {
   return cxpMoneySum(...documents.map(document => Number(document.saldoPendiente)));
 }
 
-function eligible(documents: CxpRecord[]) {
+export function eligible(documents: CxpRecord[]) {
   const first = documents[0];
   requireThat(first && Number(first.idProveedor) > 0, 'Selecciona documentos con proveedor');
   for (const document of documents) {
@@ -39,6 +39,10 @@ function eligible(documents: CxpRecord[]) {
       payable.includes(String(document.estado)) &&
       document.posibleDuplicado !== 'S',
       'Solo se admiten obligaciones validadas/aprobadas, sin bloqueo ni duplicados',
+    );
+    requireThat(
+      !(document.tipoDocumento === 'FACTURA_ESPECIAL' && document.estado === 'APROBADA'),
+      'La factura especial debe emitirse antes de iniciar un proceso de pago',
     );
     requireThat(
       Number.isFinite(Number(document.saldoPendiente)) && Number(document.saldoPendiente) > 0,

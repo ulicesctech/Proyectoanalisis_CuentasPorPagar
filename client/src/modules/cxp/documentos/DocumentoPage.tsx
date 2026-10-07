@@ -108,7 +108,11 @@ export function CxpDocumentoPage() {
           { header: 'Saldo', align: 'right', cell: ({ row }: { row: DocumentoListRow }) => <span className="font-bold text-slate-900">{formatDocumentoMoney(row.saldoPendiente, row.moneda)}</span> },
           { header: 'Estado', cell: ({ row }: { row: DocumentoListRow }) => <DocumentoStatus estado={row.estado} /> },
           { header: '', align: 'right', cell: ({ row }: { row: DocumentoListRow }) =>
-            <Link to={`/cxp/documentos/${row.idDocumento}`} className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 whitespace-nowrap">Ver expediente</Link> },
+            <Link to={row.tipoDocumento === 'FACTURA_ESPECIAL'
+              ? `/cxp/facturas-especiales/${row.idDocumento}` : `/cxp/documentos/${row.idDocumento}`}
+              className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 whitespace-nowrap">
+              {row.tipoDocumento === 'FACTURA_ESPECIAL' ? 'Ver factura especial' : 'Ver expediente'}
+            </Link> },
         ]} />
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
         <span>{meta.total} documentos · Página {page} de {meta.totalPages}</span>

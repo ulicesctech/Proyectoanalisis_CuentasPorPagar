@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, RefreshCw, ShieldCheck, Upload, XCircle } from 'lucide-react';
 import type {
   CxpAplicacion, CxpArchivo, CxpDocumento, CxpDocumentoDetalle, CxpDocumentoTributo,
@@ -260,6 +260,10 @@ export function CxpDocumentoExpedientePage() {
   const hasDte = dteFiles.some(file => file.categoria === 'DTE' && file.disponible);
   const guide = document ? nextStep(document, expediente.lineas, hasDte) : null;
   const currency = document?.moneda || 'GTQ';
+
+  if (document?.tipoDocumento === 'FACTURA_ESPECIAL') {
+    return <Navigate to={`/cxp/facturas-especiales/${document.idDocumento}`} replace />;
+  }
 
   return <CxpLayout resource="documentos">
     <div className="space-y-5">
