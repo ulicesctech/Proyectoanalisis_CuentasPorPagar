@@ -98,6 +98,11 @@ export function createDocumentoPaymentOperations(run: typeof withCxpTransaction 
         const moved = await applyCxpMovement(connection, application, false, 'ORDINARIO');
         const repository = createCxpRepository('aplicaciones').bind(connection);
         const createdId = await repository.create(moved);
+        await createCxpRepository('eventos').bind(connection).create({
+          tipoEvento: 'APLICACION_PAGO', asunto: 'Pago aplicado al documento',
+          estadoAnterior: 'PENDIENTE', estadoNuevo: 'APLICADA',
+          montoRelacionado: cents / 100, usuarioEvento: aplicadoPor, idAplicacion: createdId,
+        });
         return (await repository.findById(createdId))!;
       });
     },
@@ -122,6 +127,12 @@ export function createDocumentoPaymentOperations(run: typeof withCxpTransaction 
         await applyCxpMovement(connection, current, true);
         await repository.update(applicationId, {
           estado: 'REVERTIDA', revertidoPor, motivoReverso, fechaReverso: timestamp.rows![0].FECHA,
+        });
+        await createCxpRepository('eventos').bind(connection).create({
+          tipoEvento: 'REVERSO_APLICACION', asunto: 'Aplicación de pago revertida',
+          detalle: motivoReverso, estadoAnterior: 'APLICADA', estadoNuevo: 'REVERTIDA',
+          montoRelacionado: Number(current.montoTotalAplicado), usuarioEvento: revertidoPor,
+          idAplicacion: applicationId,
         });
         return (await repository.findById(applicationId))!;
       });

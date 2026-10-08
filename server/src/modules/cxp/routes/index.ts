@@ -22,6 +22,12 @@ import conciliacionPagoRoutes from './conciliaciones/conciliacionPago.routes';
 import eventoRoutes from './control/evento.routes';
 import archivoRoutes from './control/archivo.routes';
 import proveedorRoutes from './configuracion/proveedor.routes';
+import antiguedadRoutes from '../reports/antiguedad/antiguedad.routes';
+import libroComprasRoutes from '../reports/libro-compras/libro-compras.routes';
+import estadisticaRoutes from '../reports/estadistica/estadistica.routes';
+import asisteComprasRoutes from '../reports/asiste-compras/asiste-compras.routes';
+import retencionesRoutes from '../reports/retenciones/retenciones.routes';
+import bitacoraRoutes from '../reports/bitacora/bitacora.routes';
 
 const router = Router();
 router.use('/procesos', procesosRoutes);
@@ -55,5 +61,11 @@ router.use('/conciliaciones-pago', conciliacionPagoRoutes);
 router.use('/eventos', eventoRoutes);
 router.use('/archivos', archivoRoutes);
 router.use('/proveedores', proveedorRoutes);
+router.use('/reportes', antiguedadRoutes);
+router.use('/reportes', libroComprasRoutes);
+router.use('/reportes', estadisticaRoutes);
+router.use('/reportes', asisteComprasRoutes);
+router.use('/reportes', retencionesRoutes);
+router.use('/reportes', bitacoraRoutes);
 
 export default router;

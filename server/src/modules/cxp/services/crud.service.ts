@@ -1,5 +1,6 @@
 import { assertOutsideProcess } from '../repositories/proceso-guard.repository';
 import oracledb, { type Connection } from 'oracledb';
+import { cxpEventoRepository } from '../repositories/control/evento.repository';
 import {
   CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord, cxpMoneySum,
   type CxpListQuery, type CxpRecord, type CxpResource,
@@ -32,7 +33,7 @@ const deletable: Partial<Record<CxpResource, string[]>> = {
   aprobaciones: ['PENDIENTE', 'CANCELADA'],
   'conciliaciones-proveedor': ['BORRADOR', 'EN_REVISION'],
   'conciliaciones-pago': ['PENDIENTE', 'EN_REVISION', 'RECHAZADO'],
-  eventos: ['ABIERTO', 'CANCELADO'],
+  eventos: [],
 };
 
 function validId(id: number): number {
@@ -121,6 +122,9 @@ async function validateRelations(connection: Connection, resource: CxpResource, 
 }
 
 function checkChange(resource: CxpResource, current: CxpRecord, input: CxpRecord): void {
+  if (resource === 'eventos') {
+    throw new CxpError('Los registros de eventos son de solo lectura y no pueden modificarse', 409);
+  }
   if (['documentos', 'pagos'].includes(resource) && Number(current.montoAplicado) > 0) {
     for (const field of ['idProveedor', 'moneda', 'naturaleza', 'idCuentaOrigen', 'idCuentaDestino']) {
       if (Object.hasOwn(input, field) && input[field] !== current[field]) throw new CxpError('Revierte las aplicaciones antes de cambiar el proveedor, la moneda o las cuentas', 409);
@@ -191,6 +195,9 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
       if (resource === 'aprobaciones' && input.idDocumento != null) {
         throw new CxpError('Las decisiones de documentos requieren la operación controlada de aprobación', 409);
       }
+      if (resource === 'eventos' && ['DECISION_APROBACION', 'LIBRO_COMPRAS_GENERADO', 'ASISTE_COMPRAS_GENERADO', 'APLICACION_PAGO', 'APLICACION_MOVIMIENTO', 'REVERSO_APLICACION'].includes(String(input.tipoEvento))) {
+        throw new CxpError('Este tipo de evento se registra mediante su operación controlada', 409);
+      }
       if (resource === 'aplicaciones' && input.estado === 'REVERTIDA') throw new CxpError('Una aplicación nueva debe registrarse pendiente, aplicada o cancelada');
       checkInitialState(resource, input);
       try { return await run(async connection => {
@@ -209,6 +216,14 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         if (resource === 'aplicaciones' && input.estado === 'APLICADA') input = await applyCxpMovement(connection, input);
         const transaction = repository.bind(connection);
         const id = await transaction.create(input);
+        if (resource === 'aplicaciones' && input.estado === 'APLICADA') {
+          await cxpEventoRepository.bind(connection).create({
+            tipoEvento: 'APLICACION_MOVIMIENTO', asunto: 'Movimiento aplicado',
+            estadoAnterior: 'PENDIENTE', estadoNuevo: 'APLICADA',
+            montoRelacionado: Number(input.montoTotalAplicado),
+            usuarioEvento: validId(Number(input.aplicadoPor)), idAplicacion: id,
+          });
+        }
         return (await transaction.findById(id))!;
       }); } catch (error) { if (resource === 'documentos') mapDocumentoUniqueError(error, input); throw error; }
     },
@@ -284,6 +299,35 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         }
         const changes = Object.fromEntries(Object.entries(input).filter(([key, value]) => key !== entity.idField && value !== current[key]));
         await transaction.update(id, changes);
+        if (resource === 'aplicaciones' && current.estado !== input.estado &&
+            (input.estado === 'APLICADA' || input.estado === 'REVERTIDA')) {
+          await cxpEventoRepository.bind(connection).create({
+            tipoEvento: input.estado === 'REVERTIDA' ? 'REVERSO_APLICACION' : 'APLICACION_MOVIMIENTO',
+            asunto: input.estado === 'REVERTIDA' ? 'Aplicación revertida' : 'Aplicación confirmada',
+            detalle: input.estado === 'REVERTIDA' ? String(input.motivoReverso) : null,
+            estadoAnterior: String(current.estado), estadoNuevo: String(input.estado),
+            montoRelacionado: Number(input.montoTotalAplicado),
+            usuarioEvento: validId(Number(input.estado === 'REVERTIDA' ? input.revertidoPor : input.aplicadoPor)),
+            idAplicacion: id,
+          });
+        }
+        if (resource === 'aprobaciones' && current.estado !== input.estado &&
+            ['APROBADA', 'RECHAZADA'].includes(String(input.estado))) {
+          const actor = validId(Number(input.idUsuarioAprobador));
+          const related = ['idPago', 'idLote', 'idCuentaBancaria', 'idCompromiso', 'idPeriodo']
+            .filter(key => input[key] != null);
+          if (related.length !== 1) throw new CxpError('La aprobación requiere una sola entidad relacionada', 409);
+          await cxpEventoRepository.bind(connection).create({
+            tipoEvento: 'DECISION_APROBACION',
+            asunto: input.estado === 'APROBADA' ? 'Aprobación aprobada' : 'Aprobación rechazada',
+            detalle: `La aprobación ${id} cambió de ${current.estado} a ${input.estado}.`,
+            estadoAnterior: String(current.estado),
+            estadoNuevo: String(input.estado),
+            prioridad: input.estado === 'RECHAZADA' ? 'ALTA' : 'NORMAL',
+            usuarioEvento: actor,
+            [related[0]]: Number(input[related[0]]),
+          });
+        }
         return (await transaction.findById(id))!;
       }); } catch (error) { if (resource === 'documentos') mapDocumentoUniqueError(error, documentInput); throw error; }
     },
