@@ -29,7 +29,7 @@ const actors: Record<number, Row> = {
   31: { USU_ID_USUARIO: 31, USU_NOMBRE_COMPLETO: 'Usuario inactivo', USU_ID_ROL: 2, USU_ACTIVO: 0, ROL_ACTIVO: 1 },
 };
 
-function memory(options: { rules?: Row[]; approvals?: Row[] } = {}) {
+function memory(options: { rules?: Row[]; approvals?: Row[]; failEvent?: boolean } = {}) {
   let document = { ...documentRow() };
   let approvals = (options.approvals ?? []).map(item => ({ ...item }));
   const rules = (options.rules ?? [ruleRow()]).map(item => ({ ...item }));
@@ -56,6 +56,11 @@ function memory(options: { rules?: Row[]; approvals?: Row[] } = {}) {
         approvals.push(row);
         writes.push('INSERT_APROBACION');
         return { outBinds: { id: [row.ID_APROBACION] } };
+      }
+      if (sql.startsWith('INSERT INTO CXP_EVENTO')) {
+        if (options.failEvent) throw new Error('Fallo de bitácora');
+        writes.push('INSERT_EVENTO');
+        return { outBinds: { newId: [1] } };
       }
       if (sql.startsWith('UPDATE CXP_DOCUMENTO SET')) {
         for (const match of sql.matchAll(/([A-Z_]+) = :v(\d+)/g)) {
@@ -100,8 +105,16 @@ test('una aprobación completa cambia el documento a APROBADA en la misma transa
   assert.equal(result.estadoDocumento, 'APROBADA');
   assert.equal(db.document.ESTADO, 'APROBADA');
   assert.equal(db.approvals.length, 1);
-  assert.deepEqual(db.writes, ['INSERT_APROBACION', 'UPDATE_DOCUMENTO']);
+  assert.deepEqual(db.writes, ['INSERT_APROBACION', 'UPDATE_DOCUMENTO', 'INSERT_EVENTO']);
   assert.ok(db.sqlCalls.some(sql => sql.includes('FOR UPDATE')));
+});
+
+test('una falla de bitácora revierte la decisión y el cambio de estado', async () => {
+  const db = memory({ failEvent: true });
+  await assert.rejects(approve(createDocumentoApprovalOperation(db.run)), /Fallo de bitácora/);
+  assert.equal(db.document.ESTADO, 'PENDIENTE_APROBACION');
+  assert.equal(db.approvals.length, 0);
+  assert.deepEqual(db.writes, []);
 });
 
 test('el documento permanece pendiente mientras falten aprobadores exigidos', async () => {
@@ -110,7 +123,7 @@ test('el documento permanece pendiente mientras falten aprobadores exigidos', as
   assert.equal(result.estadoDocumento, 'PENDIENTE_APROBACION');
   assert.equal(result.reglas[0].faltantes, 1);
   assert.equal(db.document.ESTADO, 'PENDIENTE_APROBACION');
-  assert.deepEqual(db.writes, ['INSERT_APROBACION']);
+  assert.deepEqual(db.writes, ['INSERT_APROBACION', 'INSERT_EVENTO']);
 });
 
 test('un rechazo exige motivo, registra al actor y cambia el documento a RECHAZADA', async () => {

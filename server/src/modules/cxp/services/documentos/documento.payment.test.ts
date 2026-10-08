@@ -24,6 +24,7 @@ function fakeDatabase(paymentAvailable = 420) {
   ]);
   const writes: string[] = [];
   let failInsert = false;
+  let failEvent = false;
   let pendingReservation = false;
   const connection = {
     async execute(sql: string, binds: Record<string, any>) {
@@ -65,19 +66,27 @@ function fakeDatabase(paymentAvailable = 420) {
         writes.push(sql);
         return { outBinds: { newId: [3] } };
       }
+      if (sql.startsWith('INSERT INTO CXP_EVENTO')) {
+        if (failEvent) throw new Error('Fallo de bitácora');
+        writes.push(sql);
+        return { outBinds: { newId: [4] } };
+      }
       throw new Error(`SQL inesperado: ${sql}`);
     },
   } as unknown as Connection;
   const run = (async <T>(operation: (connection: Connection) => Promise<T>) => {
     const snapshot = new Map([...rows].map(([key, value]) => [key, { ...value }]));
+    const writeCount = writes.length;
     try { return await operation(connection); }
     catch (error) {
       rows.clear();
       for (const [key, value] of snapshot) rows.set(key, value);
+      writes.splice(writeCount);
       throw error;
     }
   }) as typeof withCxpTransaction;
   return { rows, writes, connection, run, setFailInsert: () => { failInsert = true; },
+    setFailEvent: () => { failEvent = true; },
     setPendingReservation: (value: boolean) => { pendingReservation = value; } };
 }
 
@@ -121,6 +130,17 @@ test('Q200 aplicados a Q420 dejan Q220 y registran la aplicación', async () => 
   assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.ESTADO, 'PARCIALMENTE_PAGADA');
   assert.equal(db.rows.get('CXP_PAGO:2')?.MONTO_NO_APLICADO, 220);
   assert.equal(db.rows.get('CXP_APLICACION:3')?.ESTADO, 'APLICADA');
+  assert.equal(db.writes.filter(sql => sql.startsWith('INSERT INTO CXP_EVENTO')).length, 1);
+});
+
+test('una falla de bitácora revierte la aplicación y los saldos', async () => {
+  const db = fakeDatabase();
+  db.setFailEvent();
+  await assert.rejects(createDocumentoPaymentOperations(db.run).apply(1, request(200)), /Fallo de bitácora/);
+  assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 420);
+  assert.equal(db.rows.get('CXP_PAGO:2')?.MONTO_NO_APLICADO, 420);
+  assert.equal(db.rows.has('CXP_APLICACION:3'), false);
+  assert.equal(db.writes.length, 0);
 });
 
 test('una segunda aplicación no puede pagar más que el saldo restante', async () => {
@@ -179,6 +199,19 @@ test('la reversión restaura saldos y conserva motivo; no admite repetición ni 
   assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 420);
   assert.equal(db.rows.get('CXP_PAGO:2')?.MONTO_NO_APLICADO, 420);
   await assert.rejects(operation.reverse(1, 3, { revertidoPor: 9, motivoReverso: 'Otra vez' }), { status: 409 });
+  assert.equal(db.writes.filter(sql => sql.startsWith('INSERT INTO CXP_EVENTO')).length, 2);
+});
+
+test('una falla de bitácora revierte también el intento de reversión', async () => {
+  const db = fakeDatabase();
+  const operation = createDocumentoPaymentOperations(db.run);
+  await operation.apply(1, request(200));
+  db.setFailEvent();
+  await assert.rejects(operation.reverse(1, 3, { revertidoPor: 9, motivoReverso: 'Error' }), /Fallo de bitácora/);
+  assert.equal(db.rows.get('CXP_APLICACION:3')?.ESTADO, 'APLICADA');
+  assert.equal(db.rows.get('CXP_DOCUMENTO:1')?.SALDO_PENDIENTE, 220);
+  assert.equal(db.rows.get('CXP_PAGO:2')?.MONTO_NO_APLICADO, 220);
+  assert.equal(db.writes.filter(sql => sql.startsWith('INSERT INTO CXP_EVENTO')).length, 1);
 });
 
 test('el CRUD de pagos no puede crear un pago confirmado ni promover un borrador', async () => {

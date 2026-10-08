@@ -206,6 +206,17 @@ export function createDocumentoApprovalOperation(run: typeof withCxpTransaction 
           });
         }
       }
+      const estadoNuevo = (await createCxpRepository('documentos').bind(connection).findById(idDocumento))?.estado;
+      await createCxpRepository('eventos').bind(connection).create({
+        tipoEvento: 'DECISION_APROBACION',
+        asunto: input.decision === 'APROBAR' ? 'Decisión de aprobación de documento' : 'Rechazo de documento',
+        detalle: `Regla ${input.idRegla}: ${input.decision}.`,
+        estadoAnterior: String(loaded.documento.estado),
+        estadoNuevo: String(estadoNuevo),
+        prioridad: input.decision === 'RECHAZAR' ? 'ALTA' : 'NORMAL',
+        usuarioEvento: input.idUsuarioAprobador,
+        idDocumento,
+      });
       return (await loadApprovalContext(connection, idDocumento, input.idUsuarioAprobador)).context;
     });
   };
