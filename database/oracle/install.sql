@@ -47,6 +47,10 @@ PROMPT [7/8] Configurando esquemas de seguridad y accesos...
 PROMPT [8/8] Ejecutando validación inicial de instalación...
 @@08_tests/install_tests.sql
 
+-- 9. Migraciones sobre el esquema instalado (re-ejecutables)
+PROMPT [9/9] Aplicando migraciones...
+@@09_migraciones/install_migraciones.sql
+
 PROMPT =========================================================================
 PROMPT INSTALACIÓN FINALIZADA CON ÉXITO
 PROMPT =========================================================================

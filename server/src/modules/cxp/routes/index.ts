@@ -1,3 +1,4 @@
+import procesosRoutes from './procesos.routes';
 import { Router } from 'express';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { cxpStringQuery } from '../controllers/crud.controller';
@@ -8,6 +9,8 @@ import compromisoRoutes from './configuracion/compromiso.routes';
 import documentoRoutes from './documentos/documento.routes';
 import documentoDetalleRoutes from './documentos/documentoDetalle.routes';
 import documentoTributoRoutes from './documentos/documentoTributo.routes';
+import facturaEspecialRoutes from './documentos/facturaEspecial.routes';
+import reglaTributariaRoutes from './documentos/reglaTributaria.routes';
 import lotePagoRoutes from './pagos/lotePago.routes';
 import pagoRoutes from './pagos/pago.routes';
 import aplicacionRoutes from './pagos/aplicacion.routes';
@@ -18,8 +21,10 @@ import conciliacionProveedorDetalleRoutes from './conciliaciones/conciliacionPro
 import conciliacionPagoRoutes from './conciliaciones/conciliacionPago.routes';
 import eventoRoutes from './control/evento.routes';
 import archivoRoutes from './control/archivo.routes';
+import proveedorRoutes from './configuracion/proveedor.routes';
 
 const router = Router();
+router.use('/procesos', procesosRoutes);
 
 router.get('/catalogos/:catalog', async (req, res, next) => {
   try {
@@ -37,6 +42,8 @@ router.use('/compromisos', compromisoRoutes);
 router.use('/documentos', documentoRoutes);
 router.use('/documentos-detalle', documentoDetalleRoutes);
 router.use('/documentos-tributos', documentoTributoRoutes);
+router.use('/facturas-especiales', facturaEspecialRoutes);
+router.use('/reglas-tributarias', reglaTributariaRoutes);
 router.use('/lotes-pago', lotePagoRoutes);
 router.use('/pagos', pagoRoutes);
 router.use('/aplicaciones', aplicacionRoutes);
@@ -47,5 +54,6 @@ router.use('/conciliaciones-proveedor-detalle', conciliacionProveedorDetalleRout
 router.use('/conciliaciones-pago', conciliacionPagoRoutes);
 router.use('/eventos', eventoRoutes);
 router.use('/archivos', archivoRoutes);
+router.use('/proveedores', proveedorRoutes);
 
 export default router;

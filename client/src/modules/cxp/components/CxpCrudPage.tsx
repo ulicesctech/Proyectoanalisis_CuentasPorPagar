@@ -43,6 +43,8 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
   const [notice, setNotice] = useState<string | null>(null);
   const filterField = params.get('filterField') ?? '';
   const filterValue = params.get('filterValue') ?? '';
+  const parentDocumento = ['documentos-detalle', 'documentos-tributos'].includes(resource) && filterField === 'idDocumento' && /^\d+$/.test(filterValue)
+    ? filterValue : null;
   const filterDefinition = entity.fields.find(field => field.name === filterField);
   const { data, meta, isLoading, error, refetch } = useCxpList(resource, { page, search, filterField, filterValue });
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchInput); setPage(1); }, 250); return () => window.clearTimeout(timer); }, [searchInput]);
@@ -94,30 +96,37 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     ] : resource === 'lotes-pago' ? [['pagos', 'idLote', 'Pagos']]
       : resource === 'conciliaciones-proveedor' ? [['conciliaciones-proveedor-detalle', 'idConciliacionProv', 'Detalle']]
       : resource === 'pagos' ? [['aplicaciones', 'idPago', 'Aplicaciones']] : [];
-    return relations.map(([target, field, title]) => <Link key={target} className="text-xs text-blue-700 underline underline-offset-2"
+    const links = relations.map(([target, field, title]) => <Link key={target} className="text-xs text-blue-700 underline underline-offset-2"
       to={`/cxp/${target}?filterField=${field}&filterValue=${id}`}>{title}</Link>);
+    // Las facturas especiales se editan, emiten y anulan desde su propio módulo.
+    if (resource === 'documentos' && row.tipoDocumento === 'FACTURA_ESPECIAL') {
+      links.unshift(<Link key="factura-especial" className="text-xs font-semibold text-blue-700 underline underline-offset-2" to={`/cxp/facturas-especiales/${id}`}>Factura especial</Link>);
+    }
+    return links;
   };
 
   return <CxpLayout resource={resource}>
     <div className="space-y-5">
+      {parentDocumento && <Link to={`/cxp/documentos/${parentDocumento}`}
+        className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-800">← Volver al expediente · Documento #{parentDocumento}</Link>}
       <div className="flex flex-wrap justify-between items-start gap-4">
         <div><p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Cuentas por pagar · {entity.group}</p>
           <h1 className="text-2xl font-bold text-slate-900">{entity.title}</h1>
-          <p className="text-sm text-slate-500 mt-1">{resource === 'archivos' ? 'Registra los datos y la ubicación de tus archivos y evidencias.' : `Consulta y administra ${entity.title.toLowerCase()}.`}</p></div>
+          <p className="text-sm text-slate-500 mt-1">{parentDocumento ? `Trabajando en el documento #${parentDocumento}.` : resource === 'archivos' ? 'Registra los datos y la ubicación de tus archivos y evidencias.' : `Consulta y administra ${entity.title.toLowerCase()}.`}</p></div>
         <Button icon={Plus} onClick={() => { setActionError(null); setNotice(null); setModal({ mode: 'create' }); }}>Nuevo registro</Button>
       </div>
       <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <TextInput id="cxp-search" icon={Search} label="Buscar" placeholder="Buscar por ID, código o descripción…" value={searchInput}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} className="flex-1 min-w-56" />
-          <Select id="cxp-filter-field" label="Filtrar por" value={filterField} placeholder="" className="sm:max-w-56"
+          {!parentDocumento && <Select id="cxp-filter-field" label="Filtrar por" value={filterField} placeholder="" className="sm:max-w-56"
             options={[{ value: '', label: 'Sin filtro' }, ...entity.fields.filter(field => field.lookup || field.options).map(field => ({ value: field.name, label: field.label }))]}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(event.target.value, '')} />
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(event.target.value, '')} />}
           <Button icon={RefreshCw} variant="secondary" onClick={() => { clearCxpCatalogCache(); refetch(); }} disabled={isLoading}>Actualizar</Button>
         </div>
-        {filterDefinition?.lookup && <div className="max-w-lg"><RelationSelect id="cxp-filter-value" label={filterDefinition.label} catalog={filterDefinition.lookup}
+        {!parentDocumento && filterDefinition?.lookup && <div className="max-w-lg"><RelationSelect id="cxp-filter-value" label={filterDefinition.label} catalog={filterDefinition.lookup}
           value={filterValue} onChange={value => updateFilter(filterField, value)} /></div>}
-        {filterDefinition?.options && <Select id="cxp-filter-value" label={filterDefinition.label} value={filterValue} placeholder="" className="max-w-sm"
+        {!parentDocumento && filterDefinition?.options && <Select id="cxp-filter-value" label={filterDefinition.label} value={filterValue} placeholder="" className="max-w-sm"
           options={[{ value: '', label: 'Todos' }, ...filterDefinition.options.map(value => ({ value, label: value.replace(/_/g, ' ') }))]}
           onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(filterField, event.target.value)} />}
       </div>

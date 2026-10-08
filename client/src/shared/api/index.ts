@@ -4,6 +4,9 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
+/** Base del API para descargas de archivos (p. ej. PDF), que no pasan por apiClient (JSON). */
+export const API_BASE_URL = BASE_URL;
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -41,6 +44,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+export const apiRequest = request;
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, data: unknown) =>
@@ -48,6 +53,18 @@ export const apiClient = {
   patch: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  uploadDte: <T>(path: string, file: File) => request<T>(path, {
+    method: 'POST', body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+  }),
+  async download(path: string): Promise<Blob> {
+    const response = await fetch(`${BASE_URL}${path}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new ApiError(body?.error ?? `Error ${response.status}`, response.status, body?.details);
+    }
+    return response.blob();
+  },
 };
 
 /** Construye un query string ignorando valores undefined/vacíos. */

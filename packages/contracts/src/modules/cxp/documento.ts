@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { cxpDate, cxpNumber } from './validation';
+import type { CxpAplicacion } from './aplicacion';
+import type { CxpArchivo } from './archivo';
+import type { CxpDocumentoDetalle } from './documento-detalle';
+import type { CxpDocumentoTributo } from './documento-tributo';
 
 export interface CxpDocumento {
   idDocumento: number;
@@ -11,7 +15,7 @@ export interface CxpDocumento {
   noFacturaCompra: string | null;
   noOrdenCompra: string | null;
   noRecepcion: string | null;
-  tipoDocumento: "FACTURA" | "FACTURA_CAMBIARIA" | "NOTA_CREDITO" | "NOTA_DEBITO" | "RECIBO" | "REEMBOLSO" | "LIQUIDACION_VIATICO" | "GASTO_CAJA_CHICA" | "CUOTA_CONTRATO" | "CUOTA_PRESTAMO" | "OBLIGACION_FISCAL" | "SALDO_INICIAL" | "COMPROBANTE_SERVICIO" | "OTRO";
+  tipoDocumento: "FACTURA" | "FACTURA_CAMBIARIA" | "NOTA_CREDITO" | "NOTA_DEBITO" | "RECIBO" | "REEMBOLSO" | "LIQUIDACION_VIATICO" | "GASTO_CAJA_CHICA" | "CUOTA_CONTRATO" | "CUOTA_PRESTAMO" | "OBLIGACION_FISCAL" | "SALDO_INICIAL" | "COMPROBANTE_SERVICIO" | "OTRO" | "FACTURA_ESPECIAL";
   naturaleza: "D" | "C";
   origenIngreso: "MANUAL" | "ARCHIVO" | "CORREO" | "IMPORTACION" | "COMPRAS" | "CARGA_MASIVA" | "INTEGRACION" | "PORTAL_PROVEEDOR" | "FACTURACION_ELECTRONICA";
   tipoRegistro: "CON_OC" | "SIN_OC" | "RECURRENTE" | "SALDO_INICIAL" | "IMPORTADO";
@@ -84,7 +88,7 @@ export const createCxpDocumentoSchema = z.strictObject({
   noFacturaCompra: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
   noOrdenCompra: z.string().trim().min(1, "Este campo es obligatorio").max(20, "Máximo 20 caracteres").nullable().optional(),
   noRecepcion: z.string().trim().min(1, "Este campo es obligatorio").max(20, "Máximo 20 caracteres").nullable().optional(),
-  tipoDocumento: z.enum(["FACTURA", "FACTURA_CAMBIARIA", "NOTA_CREDITO", "NOTA_DEBITO", "RECIBO", "REEMBOLSO", "LIQUIDACION_VIATICO", "GASTO_CAJA_CHICA", "CUOTA_CONTRATO", "CUOTA_PRESTAMO", "OBLIGACION_FISCAL", "SALDO_INICIAL", "COMPROBANTE_SERVICIO", "OTRO"] as const),
+  tipoDocumento: z.enum(["FACTURA", "FACTURA_CAMBIARIA", "NOTA_CREDITO", "NOTA_DEBITO", "RECIBO", "REEMBOLSO", "LIQUIDACION_VIATICO", "GASTO_CAJA_CHICA", "CUOTA_CONTRATO", "CUOTA_PRESTAMO", "OBLIGACION_FISCAL", "SALDO_INICIAL", "COMPROBANTE_SERVICIO", "OTRO", "FACTURA_ESPECIAL"] as const),
   naturaleza: z.enum(["D", "C"] as const).default("D" as any),
   origenIngreso: z.enum(["MANUAL", "ARCHIVO", "CORREO", "IMPORTACION", "COMPRAS", "CARGA_MASIVA", "INTEGRACION", "PORTAL_PROVEEDOR", "FACTURACION_ELECTRONICA"] as const).default("MANUAL" as any),
   tipoRegistro: z.enum(["CON_OC", "SIN_OC", "RECURRENTE", "SALDO_INICIAL", "IMPORTADO"] as const).default("SIN_OC" as any),
@@ -150,7 +154,7 @@ export const updateCxpDocumentoSchema = z.strictObject({
   noFacturaCompra: z.string().trim().min(1, "Este campo es obligatorio").max(50, "Máximo 50 caracteres").nullable().optional(),
   noOrdenCompra: z.string().trim().min(1, "Este campo es obligatorio").max(20, "Máximo 20 caracteres").nullable().optional(),
   noRecepcion: z.string().trim().min(1, "Este campo es obligatorio").max(20, "Máximo 20 caracteres").nullable().optional(),
-  tipoDocumento: z.enum(["FACTURA", "FACTURA_CAMBIARIA", "NOTA_CREDITO", "NOTA_DEBITO", "RECIBO", "REEMBOLSO", "LIQUIDACION_VIATICO", "GASTO_CAJA_CHICA", "CUOTA_CONTRATO", "CUOTA_PRESTAMO", "OBLIGACION_FISCAL", "SALDO_INICIAL", "COMPROBANTE_SERVICIO", "OTRO"] as const).optional(),
+  tipoDocumento: z.enum(["FACTURA", "FACTURA_CAMBIARIA", "NOTA_CREDITO", "NOTA_DEBITO", "RECIBO", "REEMBOLSO", "LIQUIDACION_VIATICO", "GASTO_CAJA_CHICA", "CUOTA_CONTRATO", "CUOTA_PRESTAMO", "OBLIGACION_FISCAL", "SALDO_INICIAL", "COMPROBANTE_SERVICIO", "OTRO", "FACTURA_ESPECIAL"] as const).optional(),
   naturaleza: z.enum(["D", "C"] as const).optional(),
   origenIngreso: z.enum(["MANUAL", "ARCHIVO", "CORREO", "IMPORTACION", "COMPRAS", "CARGA_MASIVA", "INTEGRACION", "PORTAL_PROVEEDOR", "FACTURACION_ELECTRONICA"] as const).optional(),
   tipoRegistro: z.enum(["CON_OC", "SIN_OC", "RECURRENTE", "SALDO_INICIAL", "IMPORTADO"] as const).optional(),
@@ -209,3 +213,12 @@ export const updateCxpDocumentoSchema = z.strictObject({
 
 export type CreateCxpDocumentoInput = z.infer<typeof createCxpDocumentoSchema>;
 export type UpdateCxpDocumentoInput = z.infer<typeof updateCxpDocumentoSchema>;
+
+/** Respuesta de lectura del expediente; el código del proceso se deriva del pago asociado. */
+export interface CxpDocumentoExpediente {
+  documento: CxpDocumento & { proveedorNombre: string | null };
+  lineas: CxpDocumentoDetalle[];
+  tributos: CxpDocumentoTributo[];
+  archivos: CxpArchivo[];
+  aplicaciones: Array<CxpAplicacion & { codigoPagoProceso: string | null }>;
+}

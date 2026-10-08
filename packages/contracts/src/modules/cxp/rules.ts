@@ -1,5 +1,6 @@
 import { getCxpEntity } from './metadata';
 import { cxpMoneyMultiply, cxpMoneySum } from './decimal';
+import { cxpToday } from './time';
 import type { CxpRecord, CxpResource, CxpValidationIssue } from './types';
 
 const present = (value: unknown) => value !== null && value !== undefined && value !== '';
@@ -66,7 +67,7 @@ export function validateCxpRecord(resource: CxpResource, value: CxpRecord): CxpV
   };
   if (has('moneda') && String(value.moneda).length !== 3) fail('moneda', 'La moneda debe tener tres letras, por ejemplo GTQ');
   const entity = getCxpEntity(resource);
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = cxpToday();
   entity?.fields.forEach(field => {
     if ((field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name) && has(field.name)) {
       if (String(value[field.name]).slice(0, 10) > hoy) fail(field.name, 'Esta fecha no puede ser posterior al día de hoy');
@@ -98,11 +99,17 @@ export function validateCxpRecord(resource: CxpResource, value: CxpRecord): CxpV
       if (has('diaVencimiento') && (n('diaVencimiento') < 1 || n('diaVencimiento') > 31)) fail('diaVencimiento', 'El día debe estar entre 1 y 31');
       nonnegative('montoTotal', 'saldoCapital', 'tasaInteres', 'valorCuota');
       positive('numeroCuotas');
-      if (n('saldoCapital') > n('montoTotal')) fail('saldoCapital', 'El saldo no puede superar el monto total');
+      if (value.tipoCompromiso === 'FONDO_CAJA_CHICA') {
+        positive('montoTotal');
+        if (n('saldoCapital') > n('montoTotal')) fail('saldoCapital', 'El saldo disponible no puede superar el monto total del fondo');
+      } else if (n('saldoCapital') > n('montoTotal')) {
+        fail('saldoCapital', 'El saldo no puede superar el monto total');
+      }
       break;
     case 'documentos':
       if (value.tipoRegistro === 'CON_OC') need('noOrdenCompra');
       if (value.origenIngreso === 'COMPRAS') need('noFacturaCompra');
+      if (value.tipoDocumento === 'GASTO_CAJA_CHICA') need('idCompromiso');
       positive('tipoCambio');
       nonnegative('subtotal', 'descuentoTotal', 'impuestoTotal', 'retencionTotal', 'recargoTotal', 'gastoAdicionalTotal', 'totalBruto', 'totalNeto', 'totalLocal', 'montoAplicado', 'saldoPendiente', 'capitalCuota', 'interesCuota', 'comisionCuota');
       if (n('montoAplicado') > n('totalNeto')) fail('subtotal', 'El total neto no puede ser menor al monto ya aplicado');
