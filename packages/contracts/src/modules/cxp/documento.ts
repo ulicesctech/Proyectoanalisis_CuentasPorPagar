@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { cxpDate, cxpNumber } from './validation';
+import type { CxpAplicacion } from './aplicacion';
+import type { CxpArchivo } from './archivo';
+import type { CxpDocumentoDetalle } from './documento-detalle';
+import type { CxpDocumentoTributo } from './documento-tributo';
 
 export interface CxpDocumento {
   idDocumento: number;
@@ -209,3 +213,12 @@ export const updateCxpDocumentoSchema = z.strictObject({
 
 export type CreateCxpDocumentoInput = z.infer<typeof createCxpDocumentoSchema>;
 export type UpdateCxpDocumentoInput = z.infer<typeof updateCxpDocumentoSchema>;
+
+/** Respuesta de lectura del expediente; el código del proceso se deriva del pago asociado. */
+export interface CxpDocumentoExpediente {
+  documento: CxpDocumento & { proveedorNombre: string | null };
+  lineas: CxpDocumentoDetalle[];
+  tributos: CxpDocumentoTributo[];
+  archivos: CxpArchivo[];
+  aplicaciones: Array<CxpAplicacion & { codigoPagoProceso: string | null }>;
+}

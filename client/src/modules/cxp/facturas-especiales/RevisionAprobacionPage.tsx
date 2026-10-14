@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CxpFacturaEspecialResumen } from '@erp/contracts';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import type { AccionFlujo } from './api';
 import { AccionDialog, BotonAccion } from './components/AccionDialog';
 import { ListadoFacturas } from './components/ListadoFacturas';
@@ -15,7 +16,7 @@ export function CxpRevisionAprobacionPage() {
 
   return <CxpLayout screen="facturas-especiales/revision">
     <div className="space-y-5">
-      <div><p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Cuentas por pagar · Facturas especiales</p>
+      <div><CxpBreadcrumb group="Facturas especiales" current="Revisión y aprobación" />
         <h1 className="text-2xl font-bold text-slate-900">Revisión y aprobación</h1>
         <p className="text-sm text-slate-500 mt-1">Facturas especiales pendientes de revisión o de aprobación. Abre una fila para ver su detalle completo.</p></div>
       <UsuarioOperacion />

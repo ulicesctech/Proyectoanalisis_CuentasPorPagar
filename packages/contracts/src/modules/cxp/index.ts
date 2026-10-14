@@ -24,3 +24,5 @@ export * from './conciliacion-proveedor-detalle';
 export * from './conciliacion-pago';
 export * from './evento';
 export * from './archivo';
+
+export * from "./proceso-pago";

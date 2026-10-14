@@ -2273,6 +2273,7 @@ export const CXP_CATALOGS: Record<string, CxpCatalogDefinition> = {
     "numeric": true,
     "label": "Usuario",
     "labelCandidates": [
+      "USU_NOMBRE_COMPLETO",
       "USU_NOMBRE_USUARIO",
       "USU_NOMBRE",
       "USU_USUARIO",

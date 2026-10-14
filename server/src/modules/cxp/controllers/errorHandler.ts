@@ -2,6 +2,10 @@ import type { ErrorRequestHandler } from 'express';
 import { CxpError } from '../services/errors';
 
 export const cxpErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === 'entity.too.large') {
+    res.status(413).json({ error: 'El archivo supera el tamaño permitido' });
+    return;
+  }
   if (error instanceof CxpError) {
     res.status(error.status).json({ error: error.message, details: error.details });
     return;

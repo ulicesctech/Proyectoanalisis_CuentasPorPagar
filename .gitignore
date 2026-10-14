@@ -49,3 +49,10 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 *.log
+
+# Contenido DTE persistente durante desarrollo; en despliegue configura CXP_DTE_STORAGE_DIR.
+server/storage/
+storage/
+
+# Caché binaria generada por Windows PowerShell fuera del proyecto.
+Microsoft/Windows/PowerShell/ModuleAnalysisCache

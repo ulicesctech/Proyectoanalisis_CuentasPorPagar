@@ -37,9 +37,11 @@ export async function listCxpOptions(catalog: string, query: { search?: string; 
   try {
     const descriptiveColumns = await labelColumns(connection, catalog);
     const key = definition.numeric ? `TO_CHAR(${definition.key})` : definition.key;
-    const label = `'${definition.label.replace(/'/g, "''")} #' || ${key}` + descriptiveColumns.map(column => ` || CASE WHEN ${column} IS NOT NULL THEN ' · ' || ${column} END`).join('');
+    const label = catalog === 'condiciones-credito'
+      ? `CASE WHEN DIAS_CREDITO = 0 THEN 'Contado' ELSE TO_CHAR(DIAS_CREDITO) || ' días de crédito' END || ' · Condición #' || ${key}`
+      : `'${definition.label.replace(/'/g, "''")} #' || ${key}` + descriptiveColumns.map(column => ` || CASE WHEN ${column} IS NOT NULL THEN ' · ' || ${column} END`).join('');
     const binds: BindParameters = {};
-    const clauses: string[] = [];
+    const clauses: string[] = catalog === 'condiciones-credito' ? ["ESTADO = 'A'"] : [];
     if (query.search) {
       clauses.push(`UPPER(${label}) LIKE UPPER(:search)`);
       binds.search = `%${query.search.slice(0, 150)}%`;
@@ -69,4 +71,14 @@ export async function listCxpOptions(catalog: string, query: { search?: string; 
   } finally {
     await connection.close();
   }
+}
+
+/** Etiqueta dentro de la conexión actual: evita abrir otro pool dentro de una transacción. */
+export async function cxpCatalogLabel(connection: Connection, catalog: string, id: number): Promise<string> {
+  const definition = CXP_CATALOGS[catalog];
+  if (!definition) throw new CxpError('Catálogo no encontrado');
+  const columns = await labelColumns(connection, catalog);
+  const expression = columns.length ? columns.map(c => `NVL(TO_CHAR(${c}), '')`).join(" || ' · ' || ") : `TO_CHAR(${definition.key})`;
+  const result = await connection.execute<{LABEL:string}>(`SELECT ${expression} LABEL FROM ${definition.table} WHERE ${definition.key}=:id`, {id}, {outFormat:oracledb.OUT_FORMAT_OBJECT});
+  return result.rows?.[0]?.LABEL || `${definition.label} #${id}`;
 }
