@@ -12,6 +12,7 @@ import type { CxpRecord } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { apiClient, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';
 
 const states = ['PENDIENTE', 'APLICADA', 'REVERTIDA', 'CANCELADA'] as const;
@@ -231,7 +232,7 @@ export const CxpAplicacionPage = () => {
     <CxpLayout resource="aplicaciones">
       <div className="space-y-5">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-600">Cuentas por pagar · Pagos</p>
+          <CxpBreadcrumb group="Pagos" current="Aplicaciones" />
           <h1 className="text-2xl font-bold text-slate-900">Bandeja de aplicaciones</h1>
           <p className="mt-1 text-sm text-slate-500">
             Trazabilidad de cómo cada pago afecta a sus documentos. Las aplicaciones se generan desde el flujo de pago, no como un CRUD independiente.

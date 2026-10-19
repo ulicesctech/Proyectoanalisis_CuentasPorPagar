@@ -146,12 +146,10 @@ export function FacturaEspecialForm({ factura, onSuccess, onCancel }: {
       </div>
     </Seccion>
     <Seccion titulo="Información contable (opcional)">
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid sm:grid-cols-3 gap-4">
         <RelationSelect id="fe-departamento" catalog="departamentos" label="Departamento" value={valores.idDepartamento} onChange={set('idDepartamento')} />
-        <div className="space-y-4">
-          <TextInput {...input('centroCosto')} label="Centro de costo" maxLength={50} />
-          <TextInput {...input('cuentaContable')} label="Cuenta contable" maxLength={50} />
-        </div>
+        <TextInput {...input('centroCosto')} label="Centro de costo" maxLength={50} />
+        <TextInput {...input('cuentaContable')} label="Cuenta contable" maxLength={50} />
       </div>
       <TextArea {...input('observaciones')} label="Observaciones" rows={2} maxLength={1500} />
     </Seccion>

@@ -13,6 +13,7 @@ import type { CxpRecord, PaginatedResponse } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { apiClient, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';
 
 const states = [
@@ -193,7 +194,7 @@ export const CxpLotePagoPage = () => {
     <CxpLayout resource="lotes-pago">
       <div className="space-y-5">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-600">Cuentas por pagar · Pagos</p>
+          <CxpBreadcrumb group="Pagos" current="Lotes de pago" />
           <h1 className="text-2xl font-bold text-slate-900">Bandeja de lotes de pago</h1>
           <p className="mt-1 text-sm text-slate-500">
             Seguimiento operativo de los lotes generados por el flujo de pagos. Aquí no se editan registros manualmente.

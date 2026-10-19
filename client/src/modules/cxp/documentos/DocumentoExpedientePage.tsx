@@ -320,7 +320,7 @@ export function CxpDocumentoExpedientePage() {
           {document.estado === 'PENDIENTE_APROBACION' && <div className="border-t border-slate-100 mt-4 pt-4 space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_1fr] gap-4 items-start">
               <DocumentoCatalogPicker id="approval-actor" label="Responsable de la decisión" catalog="usuarios"
-                value={actorId} onChange={setActorId} placeholder="Buscar usuario responsable…" required />
+                value={actorId} onChange={setActorId} placeholder="Seleccionar usuario responsable…" required />
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aprobaciones requeridas</p>
                 {approvalLoading && <p className="text-sm text-slate-500 mt-2">Comprobando autorización…</p>}

@@ -2,6 +2,7 @@ import { ProcesosPagoPage } from './procesos/ProcesosPagoPage';
 // client/src/modules/cxp/routes.tsx
 import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../../layouts/MainLayout';
+import { CxpHomePage } from './home/CxpHomePage';
 
 // --- Configuración ---
 import { CxpParametroPage } from './configuracion/ParametroPage';
@@ -44,7 +45,7 @@ const cxpPages: RouteObject[] = [
   { path: '/cxp/contrasenas', element: <ProcesosPagoPage key="contrasenas" bandeja="contrasenas" /> },
   { path: '/cxp/autorizaciones', element: <ProcesosPagoPage key="autorizaciones" bandeja="autorizaciones" /> },
   { path: '/cxp/cheques', element: <ProcesosPagoPage key="cheques" bandeja="cheques" /> },
-  { path: '/cxp', element: <Navigate to="/cxp/parametros" replace /> },
+  { path: '/cxp', element: <CxpHomePage /> },
   // --- Configuración ---
   { path: '/cxp/parametros', element: <CxpParametroPage /> },
   { path: '/cxp/periodos', element: <CxpPeriodoPage /> },

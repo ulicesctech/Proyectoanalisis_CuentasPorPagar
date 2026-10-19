@@ -8,6 +8,7 @@ import {
 import { apiClient, ApiError } from '../../../shared/api';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { documentoRegistroPayload } from './documentoRegistroPayload';
 import { formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
@@ -215,7 +216,7 @@ export function CxpDocumentoRegistroPage() {
     <div className="space-y-5 max-w-6xl">
       <Link to="/cxp/documentos" className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700"><ArrowLeft size={16} /> Volver a documentos</Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600 mb-1">Cuentas por pagar · Registro</p>
+        <div><CxpBreadcrumb group="Documentos" current="Registro" />
           <h1 className="text-2xl font-bold text-slate-900">Registrar DTE</h1>
           <p className="text-sm text-slate-500 mt-1">Guarda el documento recibido y completa su expediente antes de validarlo.</p></div>
         <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><FileText size={14} /> Estado inicial: RECIBIDO</span>
@@ -259,7 +260,7 @@ export function CxpDocumentoRegistroPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {input('fechaDocumento', 'Fecha del documento', { type: 'date', required: true, max: guatemalaCalendarDate() })}
               <DocumentoCatalogPicker id="registro-idCondicionCredito" label="Condición de pago" catalog="condiciones-credito"
-                value={values.idCondicionCredito} required error={errors.idCondicionCredito} placeholder="Buscar condición activa…"
+                value={values.idCondicionCredito} required error={errors.idCondicionCredito} placeholder="Seleccionar condición activa…"
                 onChange={chooseCatalog('idCondicionCredito')} />
               <div className="sm:col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Vencimiento calculado</p>
