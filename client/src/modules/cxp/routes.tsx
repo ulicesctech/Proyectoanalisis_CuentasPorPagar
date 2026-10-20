@@ -41,6 +41,7 @@ import { CxpConciliacionProveedorDetallePage } from './conciliaciones/Conciliaci
 import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 
 // --- Reportes ---
+import { CxpReportesResumenPage } from './reportes/ReportesResumenPage';
 import { CxpAntiguedadPage } from './reportes/AntiguedadPage';
 import { CxpRetencionesPage } from './reportes/RetencionesPage';
 import { CxpEstadisticaPage } from './reportes/EstadisticaPage';
@@ -85,6 +86,7 @@ const cxpPages: RouteObject[] = [
   { path: '/cxp/archivos', element: <CxpArchivoPage /> },
 
   // --- Reportes ---
+  { path: '/cxp/reportes', element: <CxpReportesResumenPage /> },
   { path: '/cxp/reportes/antiguedad', element: <CxpAntiguedadPage /> },
   { path: '/cxp/reportes/retenciones', element: <CxpRetencionesPage /> },
   { path: '/cxp/reportes/estadistica', element: <CxpEstadisticaPage /> },

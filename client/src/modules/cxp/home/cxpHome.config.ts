@@ -105,8 +105,8 @@ export const CXP_HOME_SECTIONS: ModuleSectionConfig[] = [
         color: 'amber', linkText: 'Ver control', tag: 'Métricas & KPIs', path: '/cxp/reglas-aprobacion' },
       { title: 'Conciliaciones', description: 'Conciliación bancaria y resolución de diferencias.', icon: Scale,
         color: 'cyan', linkText: 'Conciliar', tag: 'Bancos', path: '/cxp/conciliaciones-proveedor' },
-      { title: 'Antigüedad de saldos', description: 'Deuda vencida, rangos de vencimiento y proveedores con mayor saldo a una fecha de corte.',
-        icon: ChartColumnStacked, color: 'rose', linkText: 'Ver antigüedad', tag: 'Reportes', path: '/cxp/reportes/antiguedad' },
+      { title: 'Reportes', description: 'Antigüedad de saldos, estadística de compras y retenciones de IVA e ISR en un resumen.',
+        icon: ChartColumnStacked, color: 'rose', linkText: 'Ver reportes', tag: 'Análisis', path: '/cxp/reportes' },
     ],
   },
   {
