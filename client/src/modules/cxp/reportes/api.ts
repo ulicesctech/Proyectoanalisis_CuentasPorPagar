@@ -1,5 +1,10 @@
-import type { CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpAntiguedadRespuesta, CxpRangoAntiguedad } from '@erp/contracts';
+import type {
+  CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpAntiguedadRespuesta, CxpRangoAntiguedad,
+  CxpRetencionesFiltros, CxpRetencionesReporte, CxpRetencionesRespuesta,
+} from '@erp/contracts';
 import { apiClient, buildQueryString } from '../../../shared/api';
+
+export type FormatoExportacion = 'excel' | 'pdf';
 
 const consulta = (filtros: CxpAntiguedadFiltros) => buildQueryString({
   fechaCorte: filtros.fechaCorte, idProveedor: filtros.idProveedor, moneda: filtros.moneda,
@@ -16,16 +21,44 @@ function guardar(blob: Blob, nombre: string) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/** Las rutas de reportes exportan en `<base>/exportar` (Excel) y `<base>/exportar-pdf`. */
+async function exportarReporte(base: string, query: string, nombre: string, formato: FormatoExportacion) {
+  const blob = await apiClient.download(`${base}/${formato === 'excel' ? 'exportar' : 'exportar-pdf'}${query}`);
+  guardar(blob, `${nombre}.${formato === 'excel' ? 'xlsx' : 'pdf'}`);
+}
+
 export const antiguedadApi = {
   async consultar(filtros: CxpAntiguedadFiltros): Promise<CxpAntiguedadReporte> {
     return (await apiClient.get<CxpAntiguedadRespuesta>(`/cxp/reportes/antiguedad${consulta(filtros)}`)).data;
   },
-  async exportar(filtros: CxpAntiguedadFiltros, formato: 'excel' | 'pdf') {
-    const ruta = formato === 'excel' ? 'exportar' : 'exportar-pdf';
-    const blob = await apiClient.download(`/cxp/reportes/antiguedad/${ruta}${consulta(filtros)}`);
-    guardar(blob, `Reporte_Antiguedad_${filtros.fechaCorte}.${formato === 'excel' ? 'xlsx' : 'pdf'}`);
-  },
+  exportar: (filtros: CxpAntiguedadFiltros, formato: FormatoExportacion) =>
+    exportarReporte('/cxp/reportes/antiguedad', consulta(filtros), `Reporte_Antiguedad_${filtros.fechaCorte}`, formato),
 };
+
+const consultaRetenciones = (filtros: CxpRetencionesFiltros) => buildQueryString({
+  fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin, codigoTributo: filtros.codigoTributo,
+  idProveedor: filtros.idProveedor, idDocumento: filtros.idDocumento, numeroConstancia: filtros.numeroConstancia,
+  estado: filtros.estado, idSucursal: filtros.idSucursal, moneda: filtros.moneda,
+});
+
+export const retencionesApi = {
+  async consultar(filtros: CxpRetencionesFiltros): Promise<CxpRetencionesReporte> {
+    const { success: _success, ...reporte } = await apiClient.get<CxpRetencionesRespuesta>(`/cxp/reportes/retenciones${consultaRetenciones(filtros)}`);
+    return reporte;
+  },
+  exportar: (filtros: CxpRetencionesFiltros, formato: FormatoExportacion) =>
+    exportarReporte('/cxp/reportes/retenciones', consultaRetenciones(filtros),
+      `Reporte_Retenciones_${filtros.fechaInicio}_${filtros.fechaFin}`, formato),
+};
+
+/** Colores por posición para series dinámicas (tributos, proveedores); clases literales para Tailwind. */
+export const SERIE_COLOR = ['bg-blue-600', 'bg-amber-500', 'bg-emerald-600', 'bg-violet-600', 'bg-rose-600', 'bg-cyan-600'] as const;
+export const serieColor = (indice: number) => SERIE_COLOR[indice % SERIE_COLOR.length];
+
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+/** "2026-09" → "sep 2026". */
+export const etiquetaMes = (periodo: string) => /^\d{4}-\d{2}$/.test(periodo)
+  ? `${MESES[Number(periodo.slice(5, 7)) - 1]} ${periodo.slice(0, 4)}` : periodo;
 
 export const RANGO_ETIQUETA: Record<CxpRangoAntiguedad, string> = {
   'NO VENCIDO': 'Por vencer',
@@ -59,3 +92,6 @@ export const RANGO_COLOR: Record<CxpRangoAntiguedad, string> = {
 export const hoyGuatemala = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Guatemala', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());
+
+/** Primer día del año en curso (Guatemala), para rangos de fechas por defecto. */
+export const inicioDeAnio = () => `${hoyGuatemala().slice(0, 4)}-01-01`;

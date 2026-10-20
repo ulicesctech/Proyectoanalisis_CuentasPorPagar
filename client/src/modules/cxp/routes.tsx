@@ -42,6 +42,7 @@ import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 
 // --- Reportes ---
 import { CxpAntiguedadPage } from './reportes/AntiguedadPage';
+import { CxpRetencionesPage } from './reportes/RetencionesPage';
 
 const cxpPages: RouteObject[] = [
   { path: '/cxp/procesos-pago', element: <Navigate to="/cxp/contrasenas" replace /> },
@@ -84,6 +85,7 @@ const cxpPages: RouteObject[] = [
 
   // --- Reportes ---
   { path: '/cxp/reportes/antiguedad', element: <CxpAntiguedadPage /> },
+  { path: '/cxp/reportes/retenciones', element: <CxpRetencionesPage /> },
 
   // --- Conciliaciones ---
   { path: '/cxp/conciliaciones-proveedor', element: <CxpConciliacionProveedorPage /> },
