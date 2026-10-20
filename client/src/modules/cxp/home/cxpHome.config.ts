@@ -1,7 +1,7 @@
 // client/src/modules/cxp/home/cxpHome.config.ts
 // Configuración de la página de inicio de CxP: agregar o quitar submódulos aquí, sin tocar el layout.
 import {
-  CalendarRange, FileText, Gauge, Handshake, Landmark, LayoutGrid, ReceiptText, Scale, Settings2,
+  CalendarRange, ChartColumnStacked, FileText, Gauge, Handshake, Landmark, LayoutGrid, ReceiptText, Scale, Settings2,
   SlidersHorizontal, Wallet, type LucideIcon,
 } from 'lucide-react';
 
@@ -105,6 +105,8 @@ export const CXP_HOME_SECTIONS: ModuleSectionConfig[] = [
         color: 'amber', linkText: 'Ver control', tag: 'Métricas & KPIs', path: '/cxp/reglas-aprobacion' },
       { title: 'Conciliaciones', description: 'Conciliación bancaria y resolución de diferencias.', icon: Scale,
         color: 'cyan', linkText: 'Conciliar', tag: 'Bancos', path: '/cxp/conciliaciones-proveedor' },
+      { title: 'Antigüedad de saldos', description: 'Deuda vencida, rangos de vencimiento y proveedores con mayor saldo a una fecha de corte.',
+        icon: ChartColumnStacked, color: 'rose', linkText: 'Ver antigüedad', tag: 'Reportes', path: '/cxp/reportes/antiguedad' },
     ],
   },
   {

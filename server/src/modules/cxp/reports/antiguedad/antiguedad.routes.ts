@@ -10,6 +10,10 @@ import { generarPdfAntiguedad } from './antiguedad.pdf';
 
 const router = Router();
 
+/** `error` es el campo que lee el apiClient del frontend; `message` se conserva por compatibilidad. */
+const mensajeError = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
 /**
  * RF-17 - Consulta de antigüedad de saldos
  *
@@ -71,10 +75,8 @@ const filters: AntiguedadFilters = {
 
     return res.status(400).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'No fue posible consultar la antigüedad de saldos.',
+      message: mensajeError(error, 'No fue posible consultar la antigüedad de saldos.'),
+      error: mensajeError(error, 'No fue posible consultar la antigüedad de saldos.'),
     });
   }
 });
@@ -149,10 +151,8 @@ router.get(
 
       return res.status(400).json({
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'No fue posible exportar la antigüedad de saldos.',
+        message: mensajeError(error, 'No fue posible exportar la antigüedad de saldos.'),
+        error: mensajeError(error, 'No fue posible exportar la antigüedad de saldos.'),
       });
     }
   },
@@ -228,10 +228,8 @@ router.get(
 
       return res.status(400).json({
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'No fue posible exportar la antigüedad de saldos a PDF.',
+        message: mensajeError(error, 'No fue posible exportar la antigüedad de saldos a PDF.'),
+        error: mensajeError(error, 'No fue posible exportar la antigüedad de saldos a PDF.'),
       });
     }
   },

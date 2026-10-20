@@ -1,0 +1,245 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { FileDown, FileSpreadsheet, Search, X } from 'lucide-react';
+import type { CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpRangoAntiguedad } from '@erp/contracts';
+import { Button, Select, TextInput } from '../../../shared/ui-kit';
+import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
+import { RelationSelect } from '../components/RelationSelect';
+import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
+import { RANGOS, RANGO_COLOR, RANGO_ETIQUETA, antiguedadApi, hoyGuatemala } from './api';
+
+const RANKING_VISIBLE = 10;
+const POR_PAGINA = 20;
+
+/** Selección hecha sobre el resultado (rango o proveedor); no vuelve a consultar Oracle. */
+type Foco = { moneda: string; rango?: CxpRangoAntiguedad; idProveedor?: number; etiqueta: string };
+
+const proveedorTexto = (id: number, nombre: string | null) => nombre ?? `Proveedor #${id}`;
+const porcentaje = (parte: number, total: number) => total > 0 ? Math.round((parte / total) * 1000) / 10 : 0;
+
+export function CxpAntiguedadPage() {
+  const [formulario, setFormulario] = useState({ fechaCorte: hoyGuatemala(), idProveedor: '', moneda: '', rango: '' });
+  const [aplicados, setAplicados] = useState<CxpAntiguedadFiltros | null>(null);
+  const [reporte, setReporte] = useState<CxpAntiguedadReporte | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [foco, setFoco] = useState<Foco | null>(null);
+  const [pagina, setPagina] = useState(1);
+
+  const consultar = useCallback((filtros: CxpAntiguedadFiltros) => {
+    setCargando(true);
+    setError(null);
+    antiguedadApi.consultar(filtros)
+      .then(resultado => { setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1); })
+      .catch(reason => setError(errorDe(reason).mensaje))
+      .finally(() => setCargando(false));
+  }, []);
+
+  useEffect(() => { consultar({ fechaCorte: hoyGuatemala() }); }, [consultar]);
+
+  const enviar = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!formulario.fechaCorte) { setError('Indica la fecha de corte.'); return; }
+    consultar({
+      fechaCorte: formulario.fechaCorte,
+      idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
+      moneda: formulario.moneda.trim().toUpperCase() || undefined,
+      rangoAntiguedad: (formulario.rango || undefined) as CxpRangoAntiguedad | undefined,
+    });
+  };
+
+  const exportar = (formato: 'excel' | 'pdf') => {
+    if (!aplicados) return;
+    setExportando(formato);
+    setError(null);
+    antiguedadApi.exportar(aplicados, formato)
+      .catch(reason => setError(errorDe(reason).mensaje))
+      .finally(() => setExportando(null));
+  };
+
+  const elegir = (siguiente: Foco) => {
+    setFoco(actual => actual && actual.moneda === siguiente.moneda && actual.rango === siguiente.rango
+      && actual.idProveedor === siguiente.idProveedor ? null : siguiente);
+    setPagina(1);
+  };
+
+  const facturas = useMemo(() => (reporte?.detalle ?? []).filter(row => !foco || (
+    (row.moneda ?? 'SIN MONEDA') === foco.moneda
+    && (!foco.rango || row.rangoAntiguedad === foco.rango)
+    && (foco.idProveedor === undefined || row.idProveedor === foco.idProveedor))), [reporte, foco]);
+  const paginas = Math.max(1, Math.ceil(facturas.length / POR_PAGINA));
+  const visibles = facturas.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  const variasMonedas = (reporte?.resumenPorMoneda.length ?? 0) > 1;
+
+  return <CxpLayout screen="reportes/antiguedad">
+    <div className="space-y-5">
+      <div className="flex flex-wrap justify-between items-start gap-4">
+        <div><CxpBreadcrumb group="Reportes" current="Antigüedad de saldos" />
+          <h1 className="text-2xl font-bold text-slate-900">Antigüedad de saldos</h1>
+          <p className="text-sm text-slate-600 mt-1 max-w-3xl">Deuda con proveedores a una fecha de corte. Los saldos son históricos: se descuentan solo los pagos aplicados hasta ese día, aunque hoy la factura esté pagada.</p></div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" icon={FileSpreadsheet} disabled={!reporte || exportando !== null} onClick={() => exportar('excel')}>
+            {exportando === 'excel' ? 'Generando…' : 'Excel'}</Button>
+          <Button variant="secondary" icon={FileDown} disabled={!reporte || exportando !== null} onClick={() => exportar('pdf')}>
+            {exportando === 'pdf' ? 'Generando…' : 'PDF'}</Button>
+        </div>
+      </div>
+
+      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_minmax(14rem,1fr)_7rem_12rem_auto] lg:items-end">
+        <TextInput id="ant-corte" type="date" label="Fecha de corte" required value={formulario.fechaCorte} max={hoyGuatemala()}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaCorte: event.target.value })} />
+        <RelationSelect id="ant-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
+          value={formulario.idProveedor} onChange={value => setFormulario({ ...formulario, idProveedor: value })} />
+        <TextInput id="ant-moneda" label="Moneda" placeholder="Todas" maxLength={3} value={formulario.moneda}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, moneda: event.target.value.toUpperCase() })} />
+        <Select id="ant-rango" label="Rango" value={formulario.rango} placeholder=""
+          options={[{ value: '', label: 'Todos' }, ...RANGOS.map(rango => ({ value: rango, label: RANGO_ETIQUETA[rango] }))]}
+          onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setFormulario({ ...formulario, rango: event.target.value })} />
+        <Button type="submit" icon={Search} disabled={cargando}>{cargando ? 'Consultando…' : 'Consultar'}</Button>
+      </form>
+
+      {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</p>}
+
+      {reporte && !reporte.detalle.length && !cargando &&
+        <p className="bg-white border border-slate-200 rounded-xl px-6 py-10 text-center text-slate-600">
+          No hay saldos pendientes al {formatoFecha(reporte.fechaCorte)} con estos filtros.</p>}
+
+      {reporte && reporte.resumenPorMoneda.map(resumen => {
+        const rangos = reporte.resumenPorRango.filter(item => item.moneda === resumen.moneda);
+        const ranking = reporte.rankingProveedores.filter(item => item.moneda === resumen.moneda).slice(0, RANKING_VISIBLE);
+        const mayorRango = Math.max(...rangos.map(item => item.saldo), 0);
+        return <section key={resumen.moneda} aria-labelledby={`ant-${resumen.moneda}`} className="space-y-4">
+          {variasMonedas && <h2 id={`ant-${resumen.moneda}`} className="text-lg font-bold text-slate-900">Saldos en {resumen.moneda}</h2>}
+          {!variasMonedas && <h2 id={`ant-${resumen.moneda}`} className="sr-only">Resumen al corte</h2>}
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <p className="text-sm font-medium text-slate-600">Deuda total al {formatoFecha(reporte.fechaCorte)}</p>
+              <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{formatoMonto(resumen.saldoTotal, resumen.moneda)}</p>
+              <p className="text-sm text-slate-600 mt-1">{resumen.cantidadDocumentos} {resumen.cantidadDocumentos === 1 ? 'documento' : 'documentos'}</p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+              <p className="text-sm font-medium text-red-800">Deuda vencida</p>
+              <p className="text-3xl font-bold text-red-700 mt-1 tabular-nums">{formatoMonto(resumen.saldoVencido, resumen.moneda)}</p>
+              <p className="text-sm text-red-800 mt-1">{porcentaje(resumen.saldoVencido, resumen.saldoTotal)} % de la deuda</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
+              <p className="text-sm font-medium text-emerald-800">Por vencer o sin vencimiento</p>
+              <p className="text-3xl font-bold text-emerald-700 mt-1 tabular-nums">{formatoMonto(resumen.saldoNoVencido, resumen.moneda)}</p>
+              <p className="text-sm text-emerald-800 mt-1">{porcentaje(resumen.saldoNoVencido, resumen.saldoTotal)} % de la deuda</p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <h3 className="font-bold text-slate-900">Rangos de vencimiento</h3>
+              <p className="text-sm text-slate-600 mb-4">Días transcurridos desde el vencimiento. Elige un rango para ver sus facturas.</p>
+              <ul className="space-y-1">
+                {rangos.map(item => {
+                  const activo = foco?.moneda === resumen.moneda && foco.rango === item.rango;
+                  return <li key={item.rango}>
+                    <button type="button" aria-pressed={activo}
+                      onClick={() => elegir({ moneda: resumen.moneda, rango: item.rango, etiqueta: RANGO_ETIQUETA[item.rango] })}
+                      className={`w-full text-left rounded-lg px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${activo ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                      <span className="flex justify-between gap-3 text-sm">
+                        <span className="font-medium text-slate-800">{RANGO_ETIQUETA[item.rango]}</span>
+                        <span className="tabular-nums text-slate-900 font-semibold">{formatoMonto(item.saldo, resumen.moneda)}</span>
+                      </span>
+                      <span className="flex items-center gap-3 mt-1.5">
+                        <span className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                          <span className={`block h-full rounded-full ${RANGO_COLOR[item.rango]}`}
+                            style={{ width: `${mayorRango > 0 ? Math.max(2, (item.saldo / mayorRango) * 100) : 0}%` }} />
+                        </span>
+                        <span className="text-xs text-slate-600 w-24 text-right">{item.cantidadDocumentos} doc. · {porcentaje(item.saldo, resumen.saldoTotal)} %</span>
+                      </span>
+                    </button>
+                  </li>;
+                })}
+              </ul>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="p-5 pb-3">
+                <h3 className="font-bold text-slate-900">Proveedores con mayor deuda</h3>
+                <p className="text-sm text-slate-600">{ranking.length < reporte.rankingProveedores.filter(item => item.moneda === resumen.moneda).length
+                  ? `Los ${RANKING_VISIBLE} primeros de ${reporte.rankingProveedores.filter(item => item.moneda === resumen.moneda).length}.` : 'Ordenados por saldo al corte.'} Elige uno para ver sus facturas.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead><tr className="bg-slate-50 text-xs font-semibold text-slate-600">
+                    <th className="px-4 py-2.5 w-10">#</th><th className="px-4 py-2.5">Proveedor</th>
+                    <th className="px-4 py-2.5 text-right">Saldo</th><th className="px-4 py-2.5 text-right">Vencido</th>
+                    <th className="px-4 py-2.5 text-right whitespace-nowrap">Días máx.</th><th className="px-4 py-2.5 min-w-32">Participación</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {ranking.map(item => {
+                      const activo = foco?.moneda === resumen.moneda && foco.idProveedor === item.idProveedor;
+                      return <tr key={item.idProveedor} className={activo ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                        <td className="px-4 py-2.5 text-slate-600 tabular-nums">{item.posicion}</td>
+                        <td className="px-4 py-2.5">
+                          <button type="button" aria-pressed={activo} className="text-left font-medium text-blue-700 hover:underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                            onClick={() => elegir({ moneda: resumen.moneda, idProveedor: item.idProveedor, etiqueta: proveedorTexto(item.idProveedor, item.nombreProveedor) })}>
+                            {proveedorTexto(item.idProveedor, item.nombreProveedor)}</button>
+                          <span className="block text-xs text-slate-600">{item.cantidadDocumentos} {item.cantidadDocumentos === 1 ? 'documento' : 'documentos'}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap">{formatoMonto(item.saldoTotal, item.moneda)}</td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums whitespace-nowrap ${item.saldoVencido > 0 ? 'text-red-700' : 'text-slate-600'}`}>{formatoMonto(item.saldoVencido, item.moneda)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{item.diasMaximos}</td>
+                        <td className="px-4 py-2.5"><span className="flex items-center gap-2">
+                          <span className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><span className="block h-full bg-blue-600 rounded-full" style={{ width: `${item.participacion}%` }} /></span>
+                          <span className="text-xs tabular-nums w-12 text-right">{item.participacion} %</span></span></td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>;
+      })}
+
+      {reporte && reporte.detalle.length > 0 && <section aria-labelledby="ant-detalle" className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="p-5 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div><h2 id="ant-detalle" className="font-bold text-slate-900">Detalle por factura</h2>
+            <p className="text-sm text-slate-600">{facturas.length} {facturas.length === 1 ? 'documento' : 'documentos'}, de mayor a menor antigüedad.</p></div>
+          {foco && <button type="button" onClick={() => { setFoco(null); setPagina(1); }}
+            className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-800 px-3 py-1.5 text-sm font-medium hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            {foco.etiqueta}{variasMonedas ? ` · ${foco.moneda}` : ''}<X size={14} aria-label="Quitar selección" /></button>}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead><tr className="bg-slate-50 text-xs font-semibold text-slate-600">
+              {['Documento', 'Proveedor', 'Emisión', 'Vencimiento', 'Rango', 'Total', 'Saldo al corte'].map(titulo =>
+                <th key={titulo} className={`px-4 py-2.5 whitespace-nowrap ${['Total', 'Saldo al corte'].includes(titulo) ? 'text-right' : ''}`}>{titulo}</th>)}
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {visibles.map(row => <tr key={row.idDocumento} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 whitespace-nowrap"><Link to={`/cxp/documentos/${row.idDocumento}`} className="font-medium text-blue-700 hover:underline underline-offset-2">
+                  {row.numeroDocumento ?? `#${row.idDocumento}`}</Link>
+                  <span className="block text-xs text-slate-600">{row.tipoDocumento ?? '—'}</span></td>
+                <td className="px-4 py-2.5 min-w-40">{proveedorTexto(row.idProveedor, row.nombreProveedor)}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap">{formatoFecha(row.fechaDocumento)}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap">{formatoFecha(row.fechaVencimiento)}
+                  {row.diasAntiguedad > 0 && <span className="block text-xs text-red-700">{row.diasAntiguedad} días vencida</span>}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><span className="inline-flex items-center gap-1.5">
+                  <span className={`h-2.5 w-2.5 rounded-full ${RANGO_COLOR[row.rangoAntiguedad as CxpRangoAntiguedad] ?? 'bg-slate-400'}`} aria-hidden="true" />
+                  {RANGO_ETIQUETA[row.rangoAntiguedad as CxpRangoAntiguedad] ?? row.rangoAntiguedad}</span></td>
+                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{formatoMonto(row.totalNeto, row.moneda ?? '')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-semibold">{formatoMonto(row.saldoHistorico, row.moneda ?? '')}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        {paginas > 1 && <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 text-sm">
+          <span className="text-slate-600">Página {pagina} de {paginas}</span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" disabled={pagina === 1} onClick={() => setPagina(pagina - 1)}>Anterior</Button>
+            <Button variant="secondary" size="sm" disabled={pagina === paginas} onClick={() => setPagina(pagina + 1)}>Siguiente</Button>
+          </div>
+        </div>}
+      </section>}
+    </div>
+  </CxpLayout>;
+}

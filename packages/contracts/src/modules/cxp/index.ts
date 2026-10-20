@@ -26,3 +26,4 @@ export * from './evento';
 export * from './archivo';
 
 export * from "./proceso-pago";
+export * from './reporte-antiguedad';
