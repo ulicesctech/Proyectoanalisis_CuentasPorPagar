@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, TrendingDown, TrendingUp } from 'lucide-react';
 import type { CxpEstadisticaFiltros, CxpEstadisticaReporte } from '@erp/contracts';
 import { Button, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
-import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha } from '../facturas-especiales/api';
-import { estadisticaApi, formatoLocal, hoyGuatemala, inicioDeAnio, serieColor, type FormatoExportacion } from './api';
+import { MONEDA_LOCAL, estadisticaApi, formatoLocal, serieColor, type FormatoExportacion, leerPeriodo, parametrosPeriodo } from './api';
+import { ReportesEncabezado } from './components/ReportesEncabezado';
 import { BotonesExportar, TendenciaMensual } from './components/ReporteComponentes';
 
 const PROVEEDORES_VISIBLES = 10;
@@ -17,7 +18,12 @@ const tipoTexto = (tipo: string) => tipo === 'SIN_TIPO' ? 'Sin tipo' : tipo.char
 const proveedorTexto = (id: number | null, nombre: string | null) => nombre ?? (id == null ? 'Sin proveedor' : `Proveedor #${id}`);
 
 export function CxpEstadisticaPage() {
-  const [formulario, setFormulario] = useState({ fechaInicio: inicioDeAnio(), fechaFin: hoyGuatemala(), idProveedor: '', moneda: '', centroCosto: '' });
+  // Período compartido de reportes (?desde=&hasta=); se actualiza al consultar.
+  const [params, setParams] = useSearchParams();
+  const busquedaUrl = params.toString();
+  const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
+  const [periodoInicial] = useState(periodo);
+  const [formulario, setFormulario] = useState({ fechaInicio: periodoInicial.fechaInicio, fechaFin: periodoInicial.fechaFin, idProveedor: '', moneda: '', centroCosto: '' });
   const [aplicados, setAplicados] = useState<CxpEstadisticaFiltros | null>(null);
   const [reporte, setReporte] = useState<CxpEstadisticaReporte | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -28,12 +34,15 @@ export function CxpEstadisticaPage() {
     setCargando(true);
     setError(null);
     estadisticaApi.consultar(filtros)
-      .then(resultado => { setReporte(resultado); setAplicados(filtros); })
+      .then(resultado => {
+        setReporte(resultado); setAplicados(filtros);
+        setParams(parametrosPeriodo({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }), { replace: true });
+      })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, []);
+  }, [setParams]);
 
-  useEffect(() => { consultar({ fechaInicio: inicioDeAnio(), fechaFin: hoyGuatemala() }); }, [consultar]);
+  useEffect(() => { consultar(periodoInicial); }, [consultar, periodoInicial]);
 
   const enviar = (event: React.FormEvent) => {
     event.preventDefault();
@@ -64,13 +73,11 @@ export function CxpEstadisticaPage() {
     .filter(texto => !texto.startsWith('No se encontraron documentos') && !texto.startsWith('No existe información suficiente'));
 
   return <CxpLayout screen="reportes/estadistica">
-    <div className="space-y-5">
-      <div className="flex flex-wrap justify-between items-start gap-4">
-        <div><CxpBreadcrumb group="Reportes" current="Estadística de compras" />
-          <h1 className="text-2xl font-bold text-slate-900">Estadística de compras</h1>
-          <p className="text-sm text-slate-600 mt-1 max-w-3xl">Compras aprobadas por fecha del documento, en moneda local (total neto por tipo de cambio). No incluye borradores, documentos anulados ni caja chica.</p></div>
+    <div className="space-y-5 max-w-[1600px]">
+      <ReportesEncabezado actual="estadistica" periodo={periodo}
+        descripcion="Compras aprobadas por fecha del documento, en quetzales. Sin borradores, anuladas ni caja chica.">
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
-      </div>
+      </ReportesEncabezado>
 
       <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(4.5rem,6rem)_minmax(7rem,10rem)_auto] lg:items-end">
         <TextInput id="est-inicio" type="date" label="Desde" required value={formulario.fechaInicio}
@@ -98,7 +105,7 @@ export function CxpEstadisticaPage() {
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <p className="text-sm font-medium text-slate-600">Compras del período</p>
             <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{formatoLocal(total)}</p>
-            <p className="text-sm text-slate-600 mt-1">Moneda local</p>
+            <p className="text-sm text-slate-600 mt-1">Quetzales, al tipo de cambio de cada documento</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <p className="text-sm font-medium text-slate-600">Documentos</p>
@@ -124,7 +131,7 @@ export function CxpEstadisticaPage() {
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <h2 className="font-bold text-slate-900">Compras mensuales</h2>
             <p className="text-sm text-slate-600 mb-4">Total por mes de la fecha del documento.</p>
-            <TendenciaMensual periodos={resumen.porMes.map(mes => mes.periodo)} series={SERIE_COMPRAS} moneda=""
+            <TendenciaMensual periodos={resumen.porMes.map(mes => mes.periodo)} series={SERIE_COMPRAS} moneda={MONEDA_LOCAL}
               valor={periodo => resumen.porMes.find(mes => mes.periodo === periodo)?.totalLocal ?? 0} />
           </div>
 

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import type { CxpRetencionesFiltros, CxpRetencionesReporte } from '@erp/contracts';
 import { Button, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
-import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
-import { hoyGuatemala, inicioDeAnio, retencionesApi, serieColor, type FormatoExportacion } from './api';
+import { retencionesApi, serieColor, type FormatoExportacion, leerPeriodo, parametrosPeriodo } from './api';
+import { ReportesEncabezado } from './components/ReportesEncabezado';
 import { BotonesExportar, Paginacion, TendenciaMensual } from './components/ReporteComponentes';
 
 const POR_PAGINA = 20;
@@ -20,8 +20,13 @@ type Foco = { moneda: string; idProveedor?: number | null; codigoTributo?: strin
 const proveedorTexto = (id: number | null, nombre: string | null) => nombre ?? (id == null ? 'Sin proveedor' : `Proveedor #${id}`);
 
 export function CxpRetencionesPage() {
+  // Período compartido de reportes (?desde=&hasta=); se actualiza al consultar.
+  const [params, setParams] = useSearchParams();
+  const busquedaUrl = params.toString();
+  const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
+  const [periodoInicial] = useState(periodo);
   const [formulario, setFormulario] = useState({
-    fechaInicio: inicioDeAnio(), fechaFin: hoyGuatemala(), idProveedor: '', codigoTributo: '', moneda: '', numeroConstancia: '',
+    fechaInicio: periodoInicial.fechaInicio, fechaFin: periodoInicial.fechaFin, idProveedor: '', codigoTributo: '', moneda: '', numeroConstancia: '',
   });
   const [aplicados, setAplicados] = useState<CxpRetencionesFiltros | null>(null);
   const [reporte, setReporte] = useState<CxpRetencionesReporte | null>(null);
@@ -35,12 +40,15 @@ export function CxpRetencionesPage() {
     setCargando(true);
     setError(null);
     retencionesApi.consultar(filtros)
-      .then(resultado => { setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1); })
+      .then(resultado => {
+        setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1);
+        setParams(parametrosPeriodo({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }), { replace: true });
+      })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, []);
+  }, [setParams]);
 
-  useEffect(() => { consultar({ fechaInicio: inicioDeAnio(), fechaFin: hoyGuatemala() }); }, [consultar]);
+  useEffect(() => { consultar(periodoInicial); }, [consultar, periodoInicial]);
 
   const enviar = (event: React.FormEvent) => {
     event.preventDefault();
@@ -93,13 +101,11 @@ export function CxpRetencionesPage() {
   const visibles = retenciones.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
   return <CxpLayout screen="reportes/retenciones">
-    <div className="space-y-5">
-      <div className="flex flex-wrap justify-between items-start gap-4">
-        <div><CxpBreadcrumb group="Reportes" current="Retenciones" />
-          <h1 className="text-2xl font-bold text-slate-900">Retenciones de IVA e ISR</h1>
-          <p className="text-sm text-slate-600 mt-1 max-w-3xl">Retenciones aplicadas a proveedores en el período, según la fecha de aplicación. Los tributos y porcentajes provienen de las reglas tributarias; las retenciones anuladas no se incluyen.</p></div>
+    <div className="space-y-5 max-w-[1600px]">
+      <ReportesEncabezado actual="retenciones" periodo={periodo}
+        descripcion="Retenciones aplicadas en el período, según las reglas tributarias. No incluye las anuladas.">
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
-      </div>
+      </ReportesEncabezado>
 
       <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)] xl:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)_minmax(7rem,10rem)_auto] lg:items-end">
         <TextInput id="ret-inicio" type="date" label="Desde" required value={formulario.fechaInicio}

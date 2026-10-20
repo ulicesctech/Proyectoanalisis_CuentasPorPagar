@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FileDown, FileSpreadsheet, Search, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Search, X } from 'lucide-react';
 import type { CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpRangoAntiguedad } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
-import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
-import { RANGOS, RANGO_COLOR, RANGO_ETIQUETA, antiguedadApi, hoyGuatemala } from './api';
+import { RANGOS, RANGO_COLOR, RANGO_ETIQUETA, antiguedadApi, hoyGuatemala, leerPeriodo, parametrosPeriodo } from './api';
+import { BotonesExportar } from './components/ReporteComponentes';
+import { ReportesEncabezado } from './components/ReportesEncabezado';
 
 const RANKING_VISIBLE = 10;
 const POR_PAGINA = 20;
@@ -19,7 +20,12 @@ const proveedorTexto = (id: number, nombre: string | null) => nombre ?? `Proveed
 const porcentaje = (parte: number, total: number) => total > 0 ? Math.round((parte / total) * 1000) / 10 : 0;
 
 export function CxpAntiguedadPage() {
-  const [formulario, setFormulario] = useState({ fechaCorte: hoyGuatemala(), idProveedor: '', moneda: '', rango: '' });
+  // El período compartido de reportes llega en la URL; aquí "hasta" es la fecha de corte.
+  const [params, setParams] = useSearchParams();
+  const busquedaUrl = params.toString();
+  const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
+  const [corteInicial] = useState(periodo.fechaFin);
+  const [formulario, setFormulario] = useState({ fechaCorte: corteInicial, idProveedor: '', moneda: '', rango: '' });
   const [aplicados, setAplicados] = useState<CxpAntiguedadFiltros | null>(null);
   const [reporte, setReporte] = useState<CxpAntiguedadReporte | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -32,12 +38,18 @@ export function CxpAntiguedadPage() {
     setCargando(true);
     setError(null);
     antiguedadApi.consultar(filtros)
-      .then(resultado => { setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1); })
+      .then(resultado => {
+        setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1);
+        setParams(previos => {
+          const actual = leerPeriodo(previos);
+          return parametrosPeriodo({ fechaInicio: actual.fechaInicio <= filtros.fechaCorte ? actual.fechaInicio : filtros.fechaCorte, fechaFin: filtros.fechaCorte });
+        }, { replace: true });
+      })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, []);
+  }, [setParams]);
 
-  useEffect(() => { consultar({ fechaCorte: hoyGuatemala() }); }, [consultar]);
+  useEffect(() => { consultar({ fechaCorte: corteInicial }); }, [consultar, corteInicial]);
 
   const enviar = (event: React.FormEvent) => {
     event.preventDefault();
@@ -74,18 +86,11 @@ export function CxpAntiguedadPage() {
   const variasMonedas = (reporte?.resumenPorMoneda.length ?? 0) > 1;
 
   return <CxpLayout screen="reportes/antiguedad">
-    <div className="space-y-5">
-      <div className="flex flex-wrap justify-between items-start gap-4">
-        <div><CxpBreadcrumb group="Reportes" current="Antigüedad de saldos" />
-          <h1 className="text-2xl font-bold text-slate-900">Antigüedad de saldos</h1>
-          <p className="text-sm text-slate-600 mt-1 max-w-3xl">Deuda con proveedores a una fecha de corte. Los saldos son históricos: se descuentan solo los pagos aplicados hasta ese día, aunque hoy la factura esté pagada.</p></div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" icon={FileSpreadsheet} disabled={!reporte || exportando !== null} onClick={() => exportar('excel')}>
-            {exportando === 'excel' ? 'Generando…' : 'Excel'}</Button>
-          <Button variant="secondary" icon={FileDown} disabled={!reporte || exportando !== null} onClick={() => exportar('pdf')}>
-            {exportando === 'pdf' ? 'Generando…' : 'PDF'}</Button>
-        </div>
-      </div>
+    <div className="space-y-5 max-w-[1600px]">
+      <ReportesEncabezado actual="antiguedad" periodo={periodo}
+        descripcion="Saldos pendientes a la fecha de corte; solo descuentan los pagos aplicados hasta ese día.">
+        <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
+      </ReportesEncabezado>
 
       <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(4.5rem,7rem)_minmax(8rem,12rem)_auto] lg:items-end">
         <TextInput id="ant-corte" type="date" label="Fecha de corte" required value={formulario.fechaCorte} max={hoyGuatemala()}
@@ -115,16 +120,22 @@ export function CxpAntiguedadPage() {
           {!variasMonedas && <h2 id={`ant-${resumen.moneda}`} className="sr-only">Resumen al corte</h2>}
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
               <p className="text-sm font-medium text-slate-600">Deuda total al {formatoFecha(reporte.fechaCorte)}</p>
               <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{formatoMonto(resumen.saldoTotal, resumen.moneda)}</p>
               <p className="text-sm text-slate-600 mt-1">{resumen.cantidadDocumentos} {resumen.cantidadDocumentos === 1 ? 'documento' : 'documentos'}</p>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-5">
-              <p className="text-sm font-medium text-red-800">Deuda vencida</p>
-              <p className="text-3xl font-bold text-red-700 mt-1 tabular-nums">{formatoMonto(resumen.saldoVencido, resumen.moneda)}</p>
-              <p className="text-sm text-red-800 mt-1">{porcentaje(resumen.saldoVencido, resumen.saldoTotal)} % de la deuda</p>
-            </div>
+            {resumen.saldoVencido > 0
+              ? <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-red-800">Deuda vencida</p>
+                <p className="text-3xl font-bold text-red-700 mt-1 tabular-nums">{formatoMonto(resumen.saldoVencido, resumen.moneda)}</p>
+                <p className="text-sm text-red-800 mt-1">{porcentaje(resumen.saldoVencido, resumen.saldoTotal)} % de la deuda</p>
+              </div>
+              : <div className="bg-white border border-slate-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-slate-600">Deuda vencida</p>
+                <p className="text-3xl font-bold text-emerald-700 mt-1 tabular-nums">{formatoMonto(0, resumen.moneda)}</p>
+                <p className="text-sm text-emerald-800 mt-1">Sin saldos vencidos a la fecha de corte</p>
+              </div>}
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
               <p className="text-sm font-medium text-emerald-800">Por vencer o sin vencimiento</p>
               <p className="text-3xl font-bold text-emerald-700 mt-1 tabular-nums">{formatoMonto(resumen.saldoNoVencido, resumen.moneda)}</p>

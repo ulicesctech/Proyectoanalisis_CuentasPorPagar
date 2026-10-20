@@ -1,7 +1,7 @@
 import type {
   CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpAntiguedadRespuesta, CxpRangoAntiguedad,
   CxpRetencionesFiltros, CxpRetencionesReporte, CxpRetencionesRespuesta,
-  CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta,
+  CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta, CxpParametro,
 } from '@erp/contracts';
 import { apiClient, buildQueryString } from '../../../shared/api';
 
@@ -66,12 +66,12 @@ export const estadisticaApi = {
       `Estadistica_Compras_${filtros.fechaInicio}_${filtros.fechaFin}`, formato),
 };
 
-/**
- * Importe en moneda local (TOTAL_LOCAL = total neto × tipo de cambio). No se antepone un
- * código porque ningún parámetro del sistema define cuál es la moneda local.
- */
+/** Moneda local del ERP: TOTAL_LOCAL (total neto × tipo de cambio) se expresa en quetzales. */
+export const MONEDA_LOCAL = 'GTQ';
+
+/** Importe de la estadística de compras (TOTAL_LOCAL) con su moneda. */
 export const formatoLocal = (value: number) =>
-  new Intl.NumberFormat('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  `${MONEDA_LOCAL} ${new Intl.NumberFormat('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
 
 /** Colores por posición para series dinámicas (tributos, proveedores); clases literales para Tailwind. */
 export const SERIE_COLOR = ['bg-blue-600', 'bg-amber-500', 'bg-emerald-600', 'bg-violet-600', 'bg-rose-600', 'bg-cyan-600'] as const;
@@ -117,3 +117,49 @@ export const hoyGuatemala = () => new Intl.DateTimeFormat('en-CA', {
 
 /** Primer día del año en curso (Guatemala), para rangos de fechas por defecto. */
 export const inicioDeAnio = () => `${hoyGuatemala().slice(0, 4)}-01-01`;
+
+export type Periodo = { fechaInicio: string; fechaFin: string };
+
+const fechaValida = (texto: string | null): texto is string => {
+  if (!texto || !/^\d{4}-\d{2}-\d{2}$/.test(texto)) return false;
+  const fecha = new Date(`${texto}T00:00:00Z`);
+  return !Number.isNaN(fecha.getTime()) && fecha.toISOString().slice(0, 10) === texto;
+};
+
+/**
+ * Período compartido entre las pestañas de reportes (`?desde=&hasta=`). Un valor ausente o
+ * inválido vuelve al año en curso hasta hoy; en Antigüedad, `hasta` es la fecha de corte.
+ */
+export function leerPeriodo(params: URLSearchParams): Periodo {
+  const hoy = hoyGuatemala();
+  const desde = params.get('desde');
+  const hasta = params.get('hasta');
+  const fechaFin = fechaValida(hasta) && hasta <= hoy ? hasta : hoy;
+  const fechaInicio = fechaValida(desde) && desde <= fechaFin ? desde : (inicioDeAnio() <= fechaFin ? inicioDeAnio() : fechaFin);
+  return { fechaInicio, fechaFin };
+}
+
+export const parametrosPeriodo = (periodo: Periodo) => new URLSearchParams({ desde: periodo.fechaInicio, hasta: periodo.fechaFin });
+
+/** Valida un período escrito por el usuario; devuelve el mensaje de error o null. */
+export function errorPeriodo(periodo: Periodo): string | null {
+  if (!periodo.fechaInicio || !periodo.fechaFin) return 'Indica las fechas Desde y Hasta.';
+  if (periodo.fechaInicio > periodo.fechaFin) return 'La fecha Desde no puede ser posterior a Hasta.';
+  if (periodo.fechaFin > hoyGuatemala()) return 'La fecha Hasta no puede ser posterior a hoy.';
+  return null;
+}
+
+/**
+ * Días de anticipación para marcar un documento como próximo a vencer, según el parámetro
+ * DIAS_ALERTA_VENCIMIENTO de CXP_PARAMETRO. Sin parámetro activo no se marca ninguno.
+ */
+export async function diasAlertaVencimiento(): Promise<number | null> {
+  const { data } = await apiClient.get<{ data: CxpParametro[] }>(`/cxp/parametros${buildQueryString({ search: 'DIAS_ALERTA_VENCIMIENTO' })}`);
+  const parametro = data.find(item => item.codigo === 'DIAS_ALERTA_VENCIMIENTO' && item.activo !== 'N');
+  const dias = Number(parametro?.valorNumero);
+  return parametro && Number.isInteger(dias) && dias >= 0 ? dias : null;
+}
+
+/** Días calendario de `desde` a `hasta` (YYYY-MM-DD). */
+export const diasEntre = (desde: string, hasta: string) =>
+  Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000);
