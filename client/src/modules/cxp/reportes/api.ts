@@ -1,6 +1,7 @@
 import type {
   CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpAntiguedadRespuesta, CxpRangoAntiguedad,
   CxpRetencionesFiltros, CxpRetencionesReporte, CxpRetencionesRespuesta,
+  CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta,
 } from '@erp/contracts';
 import { apiClient, buildQueryString } from '../../../shared/api';
 
@@ -50,6 +51,27 @@ export const retencionesApi = {
     exportarReporte('/cxp/reportes/retenciones', consultaRetenciones(filtros),
       `Reporte_Retenciones_${filtros.fechaInicio}_${filtros.fechaFin}`, formato),
 };
+
+const consultaEstadistica = (filtros: CxpEstadisticaFiltros) => buildQueryString({
+  fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin, idProveedor: filtros.idProveedor,
+  centroCosto: filtros.centroCosto, moneda: filtros.moneda, estado: filtros.estado, agrupacion: filtros.agrupacion,
+});
+
+export const estadisticaApi = {
+  async consultar(filtros: CxpEstadisticaFiltros): Promise<CxpEstadisticaReporte> {
+    return (await apiClient.get<CxpEstadisticaRespuesta>(`/cxp/reportes/estadistica${consultaEstadistica(filtros)}`)).data;
+  },
+  exportar: (filtros: CxpEstadisticaFiltros, formato: FormatoExportacion) =>
+    exportarReporte('/cxp/reportes/estadistica', consultaEstadistica(filtros),
+      `Estadistica_Compras_${filtros.fechaInicio}_${filtros.fechaFin}`, formato),
+};
+
+/**
+ * Importe en moneda local (TOTAL_LOCAL = total neto × tipo de cambio). No se antepone un
+ * código porque ningún parámetro del sistema define cuál es la moneda local.
+ */
+export const formatoLocal = (value: number) =>
+  new Intl.NumberFormat('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
 /** Colores por posición para series dinámicas (tributos, proveedores); clases literales para Tailwind. */
 export const SERIE_COLOR = ['bg-blue-600', 'bg-amber-500', 'bg-emerald-600', 'bg-violet-600', 'bg-rose-600', 'bg-cyan-600'] as const;

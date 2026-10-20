@@ -18,6 +18,7 @@ export const CXP_SCREENS = [
   { path: 'facturas-especiales/revision', title: 'Revisión y aprobación', group: 'Facturas especiales' },
   { path: 'reportes/antiguedad', title: 'Antigüedad de saldos', group: 'Reportes' },
   { path: 'reportes/retenciones', title: 'Retenciones', group: 'Reportes' },
+  { path: 'reportes/estadistica', title: 'Estadística de compras', group: 'Reportes' },
 ] as const;
 export type CxpScreen = (typeof CXP_SCREENS)[number]['path'];
 

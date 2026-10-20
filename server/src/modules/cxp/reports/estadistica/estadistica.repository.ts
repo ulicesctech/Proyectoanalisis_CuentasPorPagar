@@ -55,10 +55,22 @@ export interface EstadisticaComprasResult {
   };
 }
 
+/** Documento incluido en la estadística, para los resúmenes del servicio (no viaja al cliente). */
+export interface EstadisticaDocumento {
+  idDocumento: number;
+  idProveedor: number | null;
+  nombreProveedor: string | null;
+  tipoDocumento: string | null;
+  /** YYYY-MM calculado en Oracle, sin depender de la zona horaria del servidor Node. */
+  periodo: string;
+  totalLocal: number;
+}
+
 export async function consultarEstadisticaCompras(
   filters: EstadisticaComprasFilters,
-): Promise<EstadisticaComprasResult> {
-  const connection = await getConnection();
+  connectionFactory: typeof getConnection = getConnection,
+): Promise<EstadisticaComprasResult & { documentos: EstadisticaDocumento[] }> {
+  const connection = await connectionFactory();
 
   try {
     const errores: string[] = [];
@@ -136,8 +148,10 @@ export async function consultarEstadisticaCompras(
       SELECT
         d.ID_DOCUMENTO,
         d.ID_PROVEEDOR,
+        p.PRO_NOMBRE_ENTIDAD AS NOMBRE_PROVEEDOR,
         d.TIPO_DOCUMENTO,
         d.FECHA_DOCUMENTO,
+        TO_CHAR(d.FECHA_DOCUMENTO, 'YYYY-MM') AS PERIODO_MES,
         d.MONEDA,
         d.CENTRO_COSTO,
         NVL(d.SUBTOTAL, 0) AS SUBTOTAL,
@@ -147,6 +161,7 @@ export async function consultarEstadisticaCompras(
         NVL(d.TOTAL_LOCAL, 0) AS TOTAL_LOCAL,
         d.ESTADO
       FROM CXP_DOCUMENTO d
+      LEFT JOIN PROVEEDOR p ON p.PRO_ID_PROVEEDOR = d.ID_PROVEEDOR
       WHERE ${conditions.join(' AND ')}
       ORDER BY
         d.FECHA_DOCUMENTO,
@@ -156,7 +171,9 @@ export async function consultarEstadisticaCompras(
     interface DbRow {
       ID_DOCUMENTO: number;
       ID_PROVEEDOR: number | null;
+      NOMBRE_PROVEEDOR: string | null;
       TIPO_DOCUMENTO: string | null;
+      PERIODO_MES: string | null;
       FECHA_DOCUMENTO: Date | null;
       MONEDA: string | null;
       CENTRO_COSTO: string | null;
@@ -493,6 +510,14 @@ export async function consultarEstadisticaCompras(
         errores,
         advertencias,
       },
+      documentos: documentos.map(row => ({
+        idDocumento: Number(row.ID_DOCUMENTO),
+        idProveedor: row.ID_PROVEEDOR === null ? null : Number(row.ID_PROVEEDOR),
+        nombreProveedor: row.NOMBRE_PROVEEDOR ?? null,
+        tipoDocumento: row.TIPO_DOCUMENTO ?? null,
+        periodo: row.PERIODO_MES ?? 'SIN_PERIODO',
+        totalLocal: Number(row.TOTAL_LOCAL ?? 0),
+      })),
     };
   } finally {
     await connection.close();

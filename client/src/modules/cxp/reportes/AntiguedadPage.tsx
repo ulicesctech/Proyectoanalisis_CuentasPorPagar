@@ -87,7 +87,7 @@ export function CxpAntiguedadPage() {
         </div>
       </div>
 
-      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_minmax(14rem,1fr)_7rem_12rem_auto] lg:items-end">
+      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(4.5rem,7rem)_minmax(8rem,12rem)_auto] lg:items-end">
         <TextInput id="ant-corte" type="date" label="Fecha de corte" required value={formulario.fechaCorte} max={hoyGuatemala()}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaCorte: event.target.value })} />
         <RelationSelect id="ant-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}

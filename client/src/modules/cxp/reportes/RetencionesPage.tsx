@@ -101,7 +101,7 @@ export function CxpRetencionesPage() {
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
       </div>
 
-      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_10rem_minmax(14rem,1fr)_9rem_6rem] xl:grid-cols-[10rem_10rem_minmax(14rem,1fr)_9rem_6rem_10rem_auto] lg:items-end">
+      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)] xl:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)_minmax(7rem,10rem)_auto] lg:items-end">
         <TextInput id="ret-inicio" type="date" label="Desde" required value={formulario.fechaInicio}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaInicio: event.target.value })} />
         <TextInput id="ret-fin" type="date" label="Hasta" required value={formulario.fechaFin}
