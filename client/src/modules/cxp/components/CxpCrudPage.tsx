@@ -106,7 +106,7 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     return links;
   };
 
-  return <CxpLayout resource={resource}>
+  return <CxpLayout resource={resource} searchQuery={searchInput} onSearchChange={setSearchInput}>
     <div className="space-y-5">
       {parentDocumento && <Link to={`/cxp/documentos/${parentDocumento}`}
         className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-800">← Volver al expediente · Documento #{parentDocumento}</Link>}
@@ -143,9 +143,9 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
           }),
           { header: 'Acciones', align: 'right', cell: ({ row }: { row: CxpRecord }) => <div className="flex flex-col items-end gap-2">
             <div className="flex gap-1">
-              <button type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} className="p-2 text-slate-500 hover:bg-slate-100 rounded-md"><Eye size={16} /></button>
-              <button type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil size={16} /></button>
-              <button type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} className="p-2 text-red-600 hover:bg-red-50 rounded-md"><Trash2 size={16} /></button>
+              <Button variant="secondary" type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} ><Eye size={16} /></Button>
+              <Button variant="secondary" type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} ><Pencil size={16} /></Button>
+              <Button variant="danger" type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} ><Trash2 size={16} /></Button>
             </div><div className="flex flex-wrap justify-end gap-2">{children(row)}</div>
           </div> },
         ]} />

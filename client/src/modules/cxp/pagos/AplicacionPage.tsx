@@ -229,7 +229,7 @@ export const CxpAplicacionPage = () => {
   }
 
   return (
-    <CxpLayout resource="aplicaciones">
+    <CxpLayout resource="aplicaciones" searchQuery={searchInput} onSearchChange={setSearchInput}>
       <div className="space-y-5">
         <div>
           <CxpBreadcrumb group="Pagos" current="Aplicaciones" />
@@ -294,12 +294,12 @@ export const CxpAplicacionPage = () => {
                 placeholder="ID, pago o documento…"
                 value={searchInput}
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)}
-                className="min-w-64 flex-1"
+                className="cxp-field-text min-w-0 flex-1"
               />
               <Select
                 label="Estado"
                 value={status}
-                className="min-w-56"
+                className="cxp-filter-state"
                 options={[
                   { value: '', label: 'Todos los estados' },
                   ...states.map(value => ({ value, label: value.replace(/_/g, ' ') })),
@@ -362,7 +362,7 @@ export const CxpAplicacionPage = () => {
                     <td className="p-3">{text(row.tipoAplicacion).replace(/_/g, ' ')}</td>
                     <td className="p-3 font-medium">{money(row.montoTotalAplicado)}</td>
                     <td className="p-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${stateBadge(row.estado)}`}>{text(row.estado).replace(/_/g, ' ')}</span></td>
-                    <td className="p-3 text-right"><Button icon={Eye} variant="secondary" size="sm" disabled={opening} onClick={() => void open(row)}>Gestionar</Button></td>
+                    <td className="p-3 text-right"><Button icon={Eye} variant="secondary" size="md" disabled={opening} onClick={() => void open(row)}>Gestionar</Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -377,11 +377,11 @@ export const CxpAplicacionPage = () => {
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-3">
             <span className="text-xs text-slate-500">Página {meta.page} de {meta.totalPages} · {meta.total} registros</span>
             <div className="flex gap-2">
-              <Button icon={ChevronLeft} variant="secondary" size="sm" disabled={page <= 1 || isLoading} onClick={() => setPage(value => Math.max(1, value - 1))}>Anterior</Button>
-              <Button icon={ChevronRight} iconPosition="right" variant="secondary" size="sm" disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(value => value + 1)}>Siguiente</Button>
+              <Button icon={ChevronLeft} variant="secondary" size="md" disabled={page <= 1 || isLoading} onClick={() => setPage(value => Math.max(1, value - 1))}>Anterior</Button>
+              <Button icon={ChevronRight} iconPosition="right" variant="secondary" size="md" disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(value => value + 1)}>Siguiente</Button>
             </div>
           </div>
         </section>
@@ -389,8 +389,8 @@ export const CxpAplicacionPage = () => {
 
       {selected && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" onMouseDown={() => setSelected(null)}>
-          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-4 border-b border-blue-100 bg-blue-50 px-6 py-5">
+          <div role="dialog" aria-modal="true" aria-label="Detalle del registro" className="cxp-detail-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+            <div className="shrink-0 flex flex-wrap items-start justify-between gap-4 border-b border-blue-100 bg-blue-50 px-6 py-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Aplicación #{text(selected.idAplicacion)}</p>
                 <h2 className="mt-1 text-xl font-bold text-slate-900">
@@ -401,15 +401,15 @@ export const CxpAplicacionPage = () => {
               <Button variant="secondary" onClick={() => setSelected(null)}>Cerrar</Button>
             </div>
 
-            <div className="max-h-[75vh] space-y-5 overflow-y-auto p-6">
+            <div className="cxp-detail-body min-h-0 space-y-5 overflow-y-auto p-6">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Estado</p><span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${stateBadge(selected.estado)}`}>{text(selected.estado).replace(/_/g, ' ')}</span></div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Monto aplicado</p><p className="mt-2 font-semibold text-slate-900">{money(selected.montoTotalAplicado)}</p></div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Fecha aplicación</p><p className="mt-2 font-semibold text-slate-900">{dateTime(selected.fechaAplicacion)}</p></div>
               </div>
 
-              <section className="rounded-xl border border-slate-200 p-5">
-                <h3 className="font-semibold text-slate-900">Origen y destino</h3>
+              <details className="cxp-disclosure">
+                <summary>Origen y destino</summary>
                 <div className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                   <p>
                     <span className="text-slate-500">Pago:</span>{' '}
@@ -439,10 +439,10 @@ export const CxpAplicacionPage = () => {
                   <p><span className="text-slate-500">Aplicado por:</span> <strong>Usuario #{text(selected.aplicadoPor)}</strong></p>
                   <p><span className="text-slate-500">Estado CxC:</span> <strong>{text(selected.estadoCxc).replace(/_/g, ' ')}</strong></p>
                 </div>
-              </section>
+              </details>
 
-              <section className="rounded-xl border border-slate-200 p-5">
-                <h3 className="font-semibold text-slate-900">Detalle de importes</h3>
+              <details className="cxp-disclosure">
+                <summary>Detalle de importes</summary>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     ['Principal', selected.montoPrincipal],
@@ -458,7 +458,7 @@ export const CxpAplicacionPage = () => {
                     </div>
                   ))}
                 </div>
-              </section>
+              </details>
 
               {selected.estado === 'REVERTIDA' && (
                 <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">

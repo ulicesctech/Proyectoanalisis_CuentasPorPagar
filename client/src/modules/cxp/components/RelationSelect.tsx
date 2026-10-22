@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CxpOption } from '@erp/contracts';
 import { apiClient, buildQueryString } from '../../../shared/api';
-import { TextInput } from '../../../shared/ui-kit';
+import { Button, TextInput } from '../../../shared/ui-kit';
 import { SearchableSelect } from './SearchableSelect';
 
 const cache = new Map<string, { expires: number; result: Promise<CxpOption[]> }>();
@@ -21,12 +21,13 @@ export interface RelationSelectProps {
   placeholder?: string;
   /** Ofrece "+ Registrar proveedor" en el catálogo de proveedores; se desactiva en filtros. */
   allowCreate?: boolean;
+  onLabelChange?: (label: string) => void;
 }
 
 /** El catálogo del servidor devuelve como máximo 50 filas. */
 const CATALOG_LIMIT = 50;
 
-export function RelationSelect({ catalog, label, value, onChange, required, error, readOnly, id, filterField, filterValue, placeholder, allowCreate = true }: RelationSelectProps) {
+export function RelationSelect({ catalog, label, value, onChange, required, error, readOnly, id, filterField, filterValue, placeholder, allowCreate = true, onLabelChange }: RelationSelectProps) {
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState<CxpOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,6 +70,8 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
   useEffect(() => { if (found && known?.label !== found.label) setKnown(found); }, [found, known]);
   const selectedLabel = found?.label ?? (known?.value === value ? known.label : undefined);
 
+  useEffect(() => { onLabelChange?.(selectedLabel ?? ''); }, [selectedLabel, onLabelChange]);
+
   const handleCreateProveedor = async () => {
     if (!newNit.trim() || !newNombre.trim()) {
       setCreateError('El NIT y la Razón Social son obligatorios');
@@ -108,22 +111,15 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
         onChange={(next, nextLabel) => { if (next && nextLabel) setKnown({ value: next, label: nextLabel }); onChange(next, nextLabel); }}
         search={search} onSearchChange={setSearch} loading={loading} loadError={loadError} onRetry={() => setAttempt(current => current + 1)}
         truncated={options.length >= CATALOG_LIMIT} required={required} error={error} placeholder={placeholder}
-        labelAction={canCreate ? <button type="button" onClick={openCreate}
-          className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 underline">+ Registrar proveedor</button> : undefined}
+        labelAction={canCreate ? <Button type="button" variant="secondary" onClick={openCreate}>+ Registrar proveedor</Button> : undefined}
         emptyAction={canCreate ? { label: 'Registrar proveedor', onClick: openCreate } : undefined} />
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div role="dialog" aria-modal="true" aria-label="Registrar proveedor" data-provider-dialog className="bg-white rounded-xl shadow-2xl max-w-md max-h-[85dvh] overflow-y-auto w-full p-6 border border-slate-200">
             <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-800">Registrar Proveedor (CxP)</h3>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
-              >
-                ✕
-              </button>
+              <Button type="button" variant="secondary" disabled={creating} aria-label="Cerrar registro de proveedor" onClick={() => setShowModal(false)}>✕</Button>
             </div>
 
             <div className="space-y-4">
@@ -158,23 +154,21 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+              <Button
+                type="button" variant="secondary"
                 disabled={creating}
                 onClick={() => setShowModal(false)}
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="px-4 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
                 disabled={creating || !newNit.trim() || !newNombre.trim()}
                 onClick={handleCreateProveedor}
               >
                 {creating ? 'Guardando…' : 'Guardar y Seleccionar'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

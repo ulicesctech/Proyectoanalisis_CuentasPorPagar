@@ -8,3 +8,18 @@
 @media (max-width: 640px) {
   .cxp-shell main { padding: 16px; }
 }
+
+/* Controles compactos y detalles adaptables en las pantallas de Pagos. */
+.cxp-payment-navigation { max-width: 20rem; width: 100%; }
+.cxp-payments-shell main, .cxp-payments-shell main > div { min-width: 0; }
+.cxp-payments-shell input, .cxp-payments-shell select, .cxp-payments-shell textarea { max-width: 100%; min-width: 0; }
+.cxp-payments-shell .cxp-field-number { max-width: 14rem; }
+.cxp-payments-shell .cxp-field-date { max-width: 13rem; }
+.cxp-payments-shell .cxp-field-datetime { max-width: 20rem; }
+.cxp-payments-shell .cxp-field-text { max-width: 34rem; }
+.cxp-payments-shell button { max-width: 100%; }
+.cxp-payments-shell .cxp-filter-state { width: 14rem; max-width: 100%; }
+.cxp-payments-shell .cxp-detail-panel { display: flex; flex-direction: column; max-height: calc(100dvh - 2rem); overflow-wrap: anywhere; }
+.cxp-payments-shell .cxp-disclosure { border: 1px solid #e2e8f0; border-radius: .75rem; padding: .75rem 1rem; }
+.cxp-payments-shell .cxp-disclosure summary { cursor: pointer; font-weight: 600; color: #334155; }
+.cxp-payments-shell .cxp-disclosure[open] summary { margin-bottom: .75rem; }
