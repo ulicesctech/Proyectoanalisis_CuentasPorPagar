@@ -7,6 +7,7 @@ import { Modal } from '../../../shared/components';
 import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
 import { apiClient, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from './CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 import type { CxpFormProps } from './CxpEntityForm';
@@ -105,30 +106,30 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     return links;
   };
 
-  return <CxpLayout resource={resource}>
+  return <CxpLayout resource={resource} searchQuery={searchInput} onSearchChange={setSearchInput}>
     <div className="space-y-5">
       {parentDocumento && <Link to={`/cxp/documentos/${parentDocumento}`}
         className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-800">← Volver al expediente · Documento #{parentDocumento}</Link>}
       <div className="flex flex-wrap justify-between items-start gap-4">
-        <div><p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Cuentas por pagar · {entity.group}</p>
+        <div><CxpBreadcrumb group={entity.group} current={entity.title} />
           <h1 className="text-2xl font-bold text-slate-900">{entity.title}</h1>
           <p className="text-sm text-slate-500 mt-1">{parentDocumento ? `Trabajando en el documento #${parentDocumento}.` : resource === 'archivos' ? 'Registra los datos y la ubicación de tus archivos y evidencias.' : `Consulta y administra ${entity.title.toLowerCase()}.`}</p></div>
         <Button icon={Plus} onClick={() => { setActionError(null); setNotice(null); setModal({ mode: 'create' }); }}>Nuevo registro</Button>
       </div>
-      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4">
         <div className="flex flex-wrap items-end gap-3">
           <TextInput id="cxp-search" icon={Search} label="Buscar" placeholder="Buscar por ID, código o descripción…" value={searchInput}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} className="flex-1 min-w-56" />
           {!parentDocumento && <Select id="cxp-filter-field" label="Filtrar por" value={filterField} placeholder="" className="sm:max-w-56"
             options={[{ value: '', label: 'Sin filtro' }, ...entity.fields.filter(field => field.lookup || field.options).map(field => ({ value: field.name, label: field.label }))]}
             onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(event.target.value, '')} />}
+          {!parentDocumento && filterDefinition?.lookup && <div className="w-full sm:w-72"><RelationSelect id="cxp-filter-value" label={filterDefinition.label} catalog={filterDefinition.lookup}
+            placeholder="Todos" allowCreate={false} value={filterValue} onChange={value => updateFilter(filterField, value)} /></div>}
+          {!parentDocumento && filterDefinition?.options && <Select id="cxp-filter-value" label={filterDefinition.label} value={filterValue} placeholder="" className="sm:max-w-56"
+            options={[{ value: '', label: 'Todos' }, ...filterDefinition.options.map(value => ({ value, label: value.replace(/_/g, ' ') }))]}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(filterField, event.target.value)} />}
           <Button icon={RefreshCw} variant="secondary" onClick={() => { clearCxpCatalogCache(); refetch(); }} disabled={isLoading}>Actualizar</Button>
         </div>
-        {!parentDocumento && filterDefinition?.lookup && <div className="max-w-lg"><RelationSelect id="cxp-filter-value" label={filterDefinition.label} catalog={filterDefinition.lookup}
-          value={filterValue} onChange={value => updateFilter(filterField, value)} /></div>}
-        {!parentDocumento && filterDefinition?.options && <Select id="cxp-filter-value" label={filterDefinition.label} value={filterValue} placeholder="" className="max-w-sm"
-          options={[{ value: '', label: 'Todos' }, ...filterDefinition.options.map(value => ({ value, label: value.replace(/_/g, ' ') }))]}
-          onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(filterField, event.target.value)} />}
       </div>
       {(error || actionError) && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{actionError || error}</p>}
       {notice && !actionError && <p role="status" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm rounded-lg p-3">{notice}</p>}
@@ -142,9 +143,9 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
           }),
           { header: 'Acciones', align: 'right', cell: ({ row }: { row: CxpRecord }) => <div className="flex flex-col items-end gap-2">
             <div className="flex gap-1">
-              <button type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} className="p-2 text-slate-500 hover:bg-slate-100 rounded-md"><Eye size={16} /></button>
-              <button type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil size={16} /></button>
-              <button type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} className="p-2 text-red-600 hover:bg-red-50 rounded-md"><Trash2 size={16} /></button>
+              <Button variant="secondary" type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} ><Eye size={16} /></Button>
+              <Button variant="secondary" type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} ><Pencil size={16} /></Button>
+              <Button variant="danger" type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} ><Trash2 size={16} /></Button>
             </div><div className="flex flex-wrap justify-end gap-2">{children(row)}</div>
           </div> },
         ]} />

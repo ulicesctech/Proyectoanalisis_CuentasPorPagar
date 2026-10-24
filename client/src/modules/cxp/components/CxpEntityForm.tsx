@@ -57,6 +57,7 @@ function placeholderFor(field: CxpFieldDefinition): string | undefined {
 export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel }: CxpFormProps & { resource: CxpResource }) {
   const entity = getCxpEntity(resource)!;
   const editing = !!record;
+  const paymentForm = ['pagos', 'lotes-pago', 'aplicaciones'].includes(resource);
   const initial = useMemo(() => Object.fromEntries(entity.fields.map(field => {
     // En creación, los campos numéricos no se precargan con su valor por defecto de BD
     // (ej. 0.0) para que se vean vacíos con su placeholder "Ej: ..." en vez de un "0"
@@ -155,7 +156,8 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
         (editing || !!initialValues.idDocumento));
     const value = field.calculated ? String(preview[field.name] ?? '') : values[field.name];
     const props = { id: `cxp-${field.name}`, label: field.label, required: field.required && !field.readOnly,
-      error: errors[field.name], value, isReadOnly: locked };
+      error: errors[field.name], value, isReadOnly: locked,
+      className: paymentForm && !field.lookup && !field.options ? field.type === 'number' ? 'cxp-field-number' : field.type === 'date' ? 'cxp-field-date' : field.type === 'datetime' ? 'cxp-field-datetime' : 'cxp-field-text' : undefined };
     if (field.lookup) {
       let filterField: string | undefined;
       let filterValue: string | undefined;
@@ -177,6 +179,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       className="sm:col-span-2" onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => change(field.name, event.target.value)} />;
     const futureRestricted = (field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name);
     return <TextInput key={field.name} {...props} type={field.type === 'datetime' ? 'datetime-local' : field.type}
+      inputMode={field.type === 'number' ? field.integer ? 'numeric' : 'decimal' : undefined}
       maxLength={field.maxLength} step={field.type === 'datetime' ? '0.000001' : field.type === 'number' ? field.integer || field.scale === 0 ? '1' : field.scale ? String(10 ** -field.scale) : 'any' : undefined}
       max={futureRestricted ? localDate(field.type === 'datetime') : undefined}
       placeholder={field.identity || (field.readOnly && !field.calculated) ? 'Se genera al guardar' : placeholderFor(field)}
@@ -187,10 +190,10 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   return (
     <form noValidate onSubmit={submit} className="space-y-5">
       <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-4" aria-label="Secciones del formulario">
-        {sections.map(name => <button key={name} type="button" onClick={() => setSection(name)}
-          className={`px-3 py-2 rounded-lg text-xs font-semibold ${section === name ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-          {name}{entity.fields.some(field => field.section === name && errors[field.name]) && <span className="ml-1 text-red-300">●</span>}
-        </button>)}
+        {sections.map(name => <Button key={name} type="button" disabled={busy} onClick={() => setSection(name)}
+          variant={section === name ? 'primary' : 'secondary'} aria-pressed={section === name}>
+          {name}{entity.fields.some(field => field.section === name && errors[field.name]) && <span className="ml-1 text-red-500">●</span>}
+        </Button>)}
       </nav>
       {formError && <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{formError}</p>}
       {entity.associationFields && section === 'Relaciones' && <Select id="cxp-associated-entity" label="Entidad relacionada" required isReadOnly={readOnly || busy}
@@ -205,7 +208,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">{visible.filter(field => field.section === section).map(renderField)}</div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
         <span className="text-xs text-slate-500">{readOnly ? 'Consulta del registro' : '* Campos obligatorios'}</span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>{readOnly ? 'Cerrar' : 'Cancelar'}</Button>
           {!readOnly && <Button type="submit" disabled={busy}>{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear registro'}</Button>}
         </div>

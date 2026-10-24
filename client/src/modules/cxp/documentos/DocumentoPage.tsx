@@ -5,6 +5,7 @@ import { getCxpEntity, type CxpDocumento, type PaginatedResponse, type Paginatio
 import { apiClient, ApiError, buildQueryString } from '../../../shared/api';
 import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
 
@@ -61,7 +62,7 @@ export function CxpDocumentoPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Cuentas por pagar · Documentos</p>
+          <CxpBreadcrumb group="Documentos" />
           <h1 className="text-2xl font-bold text-slate-900">Documentos y saldos</h1>
           <p className="text-sm text-slate-500 mt-1">Consulta vencimientos y saldos, y continúa el trámite de cada documento.</p>
         </div>
@@ -74,7 +75,7 @@ export function CxpDocumentoPage() {
             placeholder="ID, serie, número o UUID"
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} />
           <DocumentoCatalogPicker id="documento-proveedor" label="Proveedor" catalog="proveedores" value={idProveedor}
-            placeholder="Buscar proveedor…" onChange={value => { setIdProveedor(value); setPage(1); }} />
+            placeholder="Todos los proveedores" onChange={value => { setIdProveedor(value); setPage(1); }} />
           <Select id="documento-estado" label="Estado" value={estado} placeholder="" options={[
             { value: '', label: 'Todos los estados' },
             ...estados.map(value => ({ value, label: readableState(value) })),

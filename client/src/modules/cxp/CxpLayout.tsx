@@ -1,16 +1,21 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CXP_ENTITIES, getCxpEntity, type BandejaProceso, type CxpResource } from '@erp/contracts';
-import { AppLayout, Select } from '../../shared/ui-kit';
+import { Select, Sidebar } from '../../shared/ui-kit';
+import { CxpTopBar } from './components/CxpTopBar';
 import './cxp.css';
 
-const groups = ['Configuración', 'Documentos', 'Facturas especiales', 'Pagos', 'Control', 'Conciliaciones'];
+/** Grupos cuyas pantallas se abren desde la página de inicio /cxp y no muestran sub-pestañas. */
+const HOME_GROUPS = ['Configuración'];
 
-/** Pantallas con flujo propio que no pertenecen al CRUD genérico. */
+/**
+ * Pantallas con flujo propio que no pertenecen al CRUD genérico, en el orden del flujo:
+ * las reglas tributarias se configuran antes de registrar, revisar y aprobar facturas.
+ */
 export const CXP_SCREENS = [
+  { path: 'reglas-tributarias', title: 'Reglas tributarias', group: 'Facturas especiales' },
   { path: 'facturas-especiales', title: 'Facturas especiales', group: 'Facturas especiales' },
   { path: 'facturas-especiales/revision', title: 'Revisión y aprobación', group: 'Facturas especiales' },
-  { path: 'reglas-tributarias', title: 'Reglas tributarias', group: 'Facturas especiales' },
 ] as const;
 export type CxpScreen = (typeof CXP_SCREENS)[number]['path'];
 
@@ -19,13 +24,15 @@ const screens = [
   ...CXP_SCREENS,
 ];
 
-export function CxpLayout({ resource, screen, children, bandeja }: {
+/** Sin resource ni screen se renderiza como página de inicio (sin sub-pestañas). */
+export function CxpLayout({ resource, screen, children, bandeja, searchQuery, onSearchChange }: {
   resource?: CxpResource; screen?: CxpScreen; children: ReactNode; bandeja?: BandejaProceso;
+  searchQuery?: string; onSearchChange?: (value: string) => void;
 }) {
   const navigate = useNavigate();
-  const active = bandeja ?? resource ?? screen!;
-  const group = resource ? getCxpEntity(resource)!.group : CXP_SCREENS.find(item => item.path === screen)!.group;
-  const navigation = group === 'Pagos'
+  const active = bandeja ?? resource ?? screen;
+  const group = resource ? getCxpEntity(resource)!.group : screen ? CXP_SCREENS.find(item => item.path === screen)!.group : undefined;
+  const navigation = !group || HOME_GROUPS.includes(group) ? [] : group === 'Pagos'
     ? [
       { path: 'contrasenas', title: 'Contraseñas' },
       { path: 'autorizaciones', title: 'Autorizaciones' },
@@ -34,20 +41,26 @@ export function CxpLayout({ resource, screen, children, bandeja }: {
       ...screens.filter(item => item.group === 'Pagos' && item.path !== 'pagos'),
     ]
     : screens.filter(item => item.group === group);
-  return <div className="cxp-shell">
-    <AppLayout activeModule="cuentas_pagar" user={{ name: 'Equipo Cuentas por Pagar', role: 'ERP universitario', initials: 'CP' }}
-      onSelectModule={(module: string) => navigate(module === 'cuentas_pagar' ? '/cxp' : module === 'cuentas_cobrar' ? '/cxc/organizacion/empresas' : '/')}
-      tabs={groups.map(item => ({ id: item, label: item }))} activeTab={group}
-      onTabChange={(tab: string) => navigate(tab === 'Pagos' ? '/cxp/contrasenas' : `/cxp/${screens.find(item => item.group === tab)!.path}`)}>
-      <div className="cxp-mobile-navigation mb-4"><Select label="Pantalla" value={active}
-        options={navigation.map(item => ({ value: item.path, label: item.title }))}
-        onChange={(event: React.ChangeEvent<HTMLSelectElement>) => navigate(`/cxp/${event.target.value}`)} /></div>
-      <div className="flex flex-wrap gap-2 mb-6" aria-label="Pantallas de cuentas por pagar">
-        {navigation.map(item => <Link key={item.path} to={`/cxp/${item.path}`}
-          aria-current={active === item.path ? 'page' : undefined}
-          className={`px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors ${active === item.path ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>{item.title}</Link>)}
-      </div>
-      {children}
-    </AppLayout>
+  return <div className={`cxp-shell ${group === 'Pagos' ? 'cxp-payments-shell' : ''} flex h-screen w-screen overflow-hidden bg-slate-50`}>
+    <Sidebar activeModule="cuentas_pagar" user={{ name: 'Equipo Cuentas por Pagar', role: 'ERP universitario', initials: 'CP' }}
+      onSelectModule={(module: string) => navigate(module === 'cuentas_pagar' ? '/cxp' : module === 'cuentas_cobrar' ? '/cxc/organizacion/empresas' : '/')} />
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} />
+      <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        {navigation.length > 0 && <>
+          {group !== 'Pagos' && <div className="cxp-mobile-navigation mb-4">
+            <Select label="Pantalla" value={active}
+              options={navigation.map(item => ({ value: item.path, label: item.title }))}
+              onChange={(event: React.ChangeEvent<HTMLSelectElement>) => navigate(`/cxp/${event.target.value}`)} />
+          </div>}
+          {group !== 'Pagos' && <div className="flex flex-wrap gap-2 mb-6" aria-label="Pantallas de cuentas por pagar">
+            {navigation.map(item => <Link key={item.path} to={`/cxp/${item.path}`}
+              aria-current={active === item.path ? 'page' : undefined}
+              className={`px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors ${active === item.path ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>{item.title}</Link>)}
+          </div>}
+        </>}
+        {children}
+      </main>
+    </div>
   </div>;
 }

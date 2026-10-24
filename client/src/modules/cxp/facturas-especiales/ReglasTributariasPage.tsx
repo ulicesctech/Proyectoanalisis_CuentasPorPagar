@@ -5,6 +5,7 @@ import type { CxpReglaTributaria } from '@erp/contracts';
 import { Modal } from '../../../shared/components';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { errorDe, formatoFecha, formatoMonto, reglasTributariasApi } from './api';
 import { ReglaTributariaForm, type ModoRegla } from './components/ReglaTributariaForm';
 import { UsuarioOperacion } from './components/UsuarioOperacion';
@@ -60,7 +61,7 @@ export function CxpReglasTributariasPage() {
   return <CxpLayout screen="reglas-tributarias">
     <div className="space-y-5">
       <div className="flex flex-wrap justify-between items-start gap-4">
-        <div><p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Cuentas por pagar · Facturas especiales</p>
+        <div><CxpBreadcrumb group="Facturas especiales" current="Reglas tributarias" />
           <h1 className="text-2xl font-bold text-slate-900">Reglas tributarias</h1>
           <p className="text-sm text-slate-500 mt-1 max-w-3xl">Porcentajes y montos de IVA e ISR con vigencia. Cada cambio crea una versión nueva; las facturas ya calculadas conservan la versión y los valores con que se procesaron.</p></div>
         <Button icon={Plus} onClick={() => { setAviso(null); setModal({ modo: 'crear' }); }}>Nueva regla</Button>
