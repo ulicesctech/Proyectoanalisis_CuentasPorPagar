@@ -40,6 +40,12 @@ import { CxpConciliacionProveedorPage } from './conciliaciones/ConciliacionProve
 import { CxpConciliacionProveedorDetallePage } from './conciliaciones/ConciliacionProveedorDetallePage';
 import { CxpConciliacionPagoPage } from './conciliaciones/ConciliacionPagoPage';
 
+// --- Reportes ---
+import { CxpReportesResumenPage } from './reportes/ReportesResumenPage';
+import { CxpAntiguedadPage } from './reportes/AntiguedadPage';
+import { CxpRetencionesPage } from './reportes/RetencionesPage';
+import { CxpEstadisticaPage } from './reportes/EstadisticaPage';
+
 const cxpPages: RouteObject[] = [
   { path: '/cxp/procesos-pago', element: <Navigate to="/cxp/contrasenas" replace /> },
   { path: '/cxp/contrasenas', element: <ProcesosPagoPage key="contrasenas" bandeja="contrasenas" /> },
@@ -78,6 +84,12 @@ const cxpPages: RouteObject[] = [
   { path: '/cxp/aprobaciones/registros', element: <CxpAprobacionPage /> },
   { path: '/cxp/eventos', element: <CxpEventoPage /> },
   { path: '/cxp/archivos', element: <CxpArchivoPage /> },
+
+  // --- Reportes ---
+  { path: '/cxp/reportes', element: <CxpReportesResumenPage /> },
+  { path: '/cxp/reportes/antiguedad', element: <CxpAntiguedadPage /> },
+  { path: '/cxp/reportes/retenciones', element: <CxpRetencionesPage /> },
+  { path: '/cxp/reportes/estadistica', element: <CxpEstadisticaPage /> },
 
   // --- Conciliaciones ---
   { path: '/cxp/conciliaciones-proveedor', element: <CxpConciliacionProveedorPage /> },

@@ -11,6 +11,10 @@ import { generarPdfEstadisticaCompras } from './estadistica.pdf';
 
 const router = Router();
 
+/** `error` es el campo que lee el apiClient del frontend; `message` se conserva por compatibilidad. */
+const mensajeError = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
 /**
  * RF-19 - Estadística de compras
  *
@@ -104,10 +108,8 @@ router.get(
 
       return res.status(400).json({
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'No fue posible consultar la estadística de compras.',
+        message: mensajeError(error, 'No fue posible consultar la estadística de compras.'),
+        error: mensajeError(error, 'No fue posible consultar la estadística de compras.'),
       });
     }
   },
@@ -199,10 +201,8 @@ router.get(
 
       return res.status(400).json({
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'No fue posible exportar la estadística.',
+        message: mensajeError(error, 'No fue posible exportar la estadística.'),
+        error: mensajeError(error, 'No fue posible exportar la estadística.'),
       });
     }
   },
@@ -294,10 +294,8 @@ router.get(
 
       return res.status(400).json({
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'No fue posible exportar la estadística.',
+        message: mensajeError(error, 'No fue posible exportar la estadística.'),
+        error: mensajeError(error, 'No fue posible exportar la estadística.'),
       });
     }
   },

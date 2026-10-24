@@ -18,6 +18,7 @@ export interface RetencionRow {
   idTributo: number;
   idDocumento: number;
   idProveedor: number | null;
+  nombreProveedor: string | null;
   idSucursal: number | null;
   tipoDocumento: string | null;
   numeroDocumento: string | null;
@@ -152,6 +153,7 @@ export async function consultarRetenciones(
         t.ID_TRIBUTO,
         t.ID_DOCUMENTO,
         d.ID_PROVEEDOR,
+        p.PRO_NOMBRE_ENTIDAD AS NOMBRE_PROVEEDOR,
         d.ID_SUCURSAL,
         d.TIPO_DOCUMENTO,
         d.NUMERO_DOCUMENTO,
@@ -187,6 +189,9 @@ export async function consultarRetenciones(
       INNER JOIN CXP_DOCUMENTO d
         ON d.ID_DOCUMENTO = t.ID_DOCUMENTO
 
+      LEFT JOIN PROVEEDOR p
+        ON p.PRO_ID_PROVEEDOR = d.ID_PROVEEDOR
+
       WHERE ${conditions.join(' AND ')}
 
       ORDER BY
@@ -214,6 +219,10 @@ export async function consultarRetenciones(
         row.ID_PROVEEDOR === undefined
           ? null
           : Number(row.ID_PROVEEDOR),
+
+      nombreProveedor: row.NOMBRE_PROVEEDOR
+        ? String(row.NOMBRE_PROVEEDOR)
+        : null,
 
       idSucursal:
         row.ID_SUCURSAL === null ||

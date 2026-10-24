@@ -1727,7 +1727,7 @@ export function ProcesosPagoPage({
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      
+
                       <div>
                         <p
                           className={`font-semibold ${
@@ -1769,7 +1769,7 @@ export function ProcesosPagoPage({
                   !options.bancosConfigurados && (
                     <div className="cxp-status-notice rounded-xl border border-amber-200 bg-amber-50 p-4">
                       <div className="flex items-start gap-3">
-                        
+
                         <div>
                           <p className="font-semibold text-amber-950">
                             Integración con Bancos no disponible

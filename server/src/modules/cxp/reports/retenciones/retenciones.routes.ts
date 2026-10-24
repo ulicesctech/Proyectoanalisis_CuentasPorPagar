@@ -5,6 +5,10 @@ import { generarRetencionesPdf } from './retenciones.pdf';
 
 const router = Router();
 
+/** `error` es el campo que lee el apiClient del frontend; `message` se conserva por compatibilidad. */
+const mensajeError = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
 function parseOptionalNumber(
   value: unknown,
 ): number | undefined {
@@ -59,10 +63,8 @@ router.get('/retenciones', async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Error al consultar las retenciones.',
+      message: mensajeError(error, 'Error al consultar las retenciones.'),
+      error: mensajeError(error, 'Error al consultar las retenciones.'),
     });
   }
 });
@@ -89,10 +91,8 @@ router.get('/retenciones/exportar', async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Error al generar el Excel de retenciones.',
+      message: mensajeError(error, 'Error al generar el Excel de retenciones.'),
+      error: mensajeError(error, 'Error al generar el Excel de retenciones.'),
     });
   }
 });
@@ -119,10 +119,8 @@ router.get('/retenciones/exportar-pdf', async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Error al generar el PDF de retenciones.',
+      message: mensajeError(error, 'Error al generar el PDF de retenciones.'),
+      error: mensajeError(error, 'Error al generar el PDF de retenciones.'),
     });
   }
 });
