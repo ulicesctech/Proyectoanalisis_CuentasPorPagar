@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search } from 'lucide-react';
 import { getCxpEntity, type CxpDocumento, type PaginatedResponse, type PaginationMeta } from '@erp/contracts';
 import { apiClient, ApiError, buildQueryString } from '../../../shared/api';
@@ -7,6 +7,7 @@ import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
+import { CxpDocumentoRegistroDialog } from './DocumentoRegistroPage';
 import { DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
 
 type DocumentoListRow = CxpDocumento & { proveedorNombre?: string | null };
@@ -16,6 +17,7 @@ const emptyMeta: PaginationMeta = { page: 1, limit: 10, total: 0, totalPages: 1 
 
 export function CxpDocumentoPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -27,6 +29,14 @@ export function CxpDocumentoPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [createdDocument, setCreatedDocument] = useState<CxpDocumento | null>(null);
+
+  useEffect(() => {
+    if (!(location.state as { openRegistro?: boolean } | null)?.openRegistro) return;
+    setRegisterOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 250);
@@ -66,7 +76,7 @@ export function CxpDocumentoPage() {
           <h1 className="text-2xl font-bold text-slate-900">Documentos y saldos</h1>
           <p className="text-sm text-slate-500 mt-1">Consulta vencimientos y saldos, y continúa el trámite de cada documento.</p>
         </div>
-        <Button icon={Plus} onClick={() => navigate('/cxp/documentos/nuevo')}>Nuevo documento</Button>
+        <Button icon={Plus} onClick={() => { setCreatedDocument(null); setRegisterOpen(true); }}>Nuevo documento</Button>
       </div>
 
       <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-4" aria-label="Filtros de documentos">
@@ -96,6 +106,11 @@ export function CxpDocumentoPage() {
         {error} <button type="button" className="underline font-semibold ml-2" onClick={() => setRefresh(value => value + 1)}>Reintentar</button>
       </div>}
 
+      {createdDocument && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+        Documento #{createdDocument.idDocumento} registrado. Se conservaron los filtros y la página del listado.{' '}
+        <Link className="font-semibold underline" to={`/cxp/documentos/${createdDocument.idDocumento}`}>Abrir expediente</Link>
+      </div>}
+
       <DataTable className="cxp-documentos-table" data={rows} isLoading={loading} emptyText={error ? 'La lista no está disponible.' : 'No hay documentos para estos filtros.'}
         columns={[
           { header: 'Documento', cell: ({ row }: { row: DocumentoListRow }) => <div className="min-w-36">
@@ -123,6 +138,11 @@ export function CxpDocumentoPage() {
         </div>
       </div>
 
+      {registerOpen && <CxpDocumentoRegistroDialog onClose={() => setRegisterOpen(false)} onSuccess={created => {
+        setRegisterOpen(false);
+        setCreatedDocument(created);
+        setRefresh(value => value + 1);
+      }} />}
     </div>
   </CxpLayout>;
 }
