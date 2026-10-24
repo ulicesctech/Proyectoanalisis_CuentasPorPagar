@@ -14,6 +14,7 @@ export interface AntiguedadFilters {
 export interface AntiguedadRow {
   idDocumento: number;
   idProveedor: number;
+  nombreProveedor: string | null;
   numeroDocumento: string | null;
   tipoDocumento: string | null;
   fechaDocumento: string | null;
@@ -79,8 +80,8 @@ if (filters.rangoAntiguedad) {
     case 'NO VENCIDO':
       conditions.push(`
         (
-          d.FECHA_VENCIMIENTO IS NULL
-          OR TRUNC(TO_DATE(:fechaCorte, 'YYYY-MM-DD'))
+          d.FECHA_VENCIMIENTO IS NOT NULL
+          AND TRUNC(TO_DATE(:fechaCorte, 'YYYY-MM-DD'))
              <= TRUNC(d.FECHA_VENCIMIENTO)
         )
       `);
@@ -142,6 +143,7 @@ if (filters.rangoAntiguedad) {
       SELECT
         d.ID_DOCUMENTO,
         d.ID_PROVEEDOR,
+        p.PRO_NOMBRE_ENTIDAD AS NOMBRE_PROVEEDOR,
         d.NUMERO_DOCUMENTO,
         d.TIPO_DOCUMENTO,
         TO_CHAR(d.FECHA_DOCUMENTO, 'YYYY-MM-DD') AS FECHA_DOCUMENTO,
@@ -204,6 +206,7 @@ if (filters.rangoAntiguedad) {
         d.CENTRO_COSTO
 
       FROM CXP_DOCUMENTO d
+      LEFT JOIN PROVEEDOR p ON p.PRO_ID_PROVEEDOR = d.ID_PROVEEDOR
 
       WHERE ${conditions.join(' AND ')}
 
@@ -220,6 +223,7 @@ if (filters.rangoAntiguedad) {
    interface AntiguedadDbRow {
   ID_DOCUMENTO: number;
   ID_PROVEEDOR: number;
+  NOMBRE_PROVEEDOR: string | null;
   NUMERO_DOCUMENTO: string | null;
   TIPO_DOCUMENTO: string | null;
   FECHA_DOCUMENTO: string | null;
@@ -245,6 +249,7 @@ const rows: AntiguedadDbRow[] = result.rows ?? [];
 const detalle: AntiguedadRow[] = rows.map((row) => ({
   idDocumento: Number(row.ID_DOCUMENTO),
   idProveedor: Number(row.ID_PROVEEDOR),
+  nombreProveedor: row.NOMBRE_PROVEEDOR ?? null,
   numeroDocumento: row.NUMERO_DOCUMENTO ?? null,
   tipoDocumento: row.TIPO_DOCUMENTO ?? null,
   fechaDocumento: row.FECHA_DOCUMENTO

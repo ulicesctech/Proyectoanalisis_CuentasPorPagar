@@ -18,11 +18,13 @@ import type {
 } from '@erp/contracts';
 
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Ban, Banknote, CalendarClock, CheckCircle2, Eye, Plus, Printer, RefreshCw, Send, X, XCircle } from 'lucide-react';
 
 import { RelationSelect } from '../components/RelationSelect';
-import { Button, TextInput, Select } from '../../../shared/ui-kit';
+import { TextInput, TextArea, Select } from '../../../shared/ui-kit';
 import { apiRequest, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
+import { CxpButton as Button } from '../components/CxpButton';
 
 import './procesos.css';
 
@@ -36,6 +38,13 @@ const titles: Record<ProcesoPago['estado'], string> = {
   COBRADO: 'Finalizado',
   RECHAZADA: 'Rechazada',
   ANULADA: 'Anulada',
+};
+
+const lanePresentation: Record<BandejaProceso, { title: string; description: string }> = {
+  contrasenas: { title: 'Contraseñas de pago', description: 'Prepará solicitudes y consultá el avance de los pagos a proveedores.' },
+  autorizaciones: { title: 'Autorizaciones de pago', description: 'Revisá las solicitudes pendientes y registrá tus decisiones.' },
+  pagos: { title: 'Programación de pagos', description: 'Programá las solicitudes aprobadas y consultá sus vencimientos.' },
+  cheques: { title: 'Ejecución de pagos', description: 'Gestioná la emisión, entrega y confirmación del medio de pago.' },
 };
 
 const money = (n: number, c = 'GTQ') =>
@@ -272,6 +281,10 @@ export function ProcesosPagoPage({
   });
 
   const [options, setOptions] = useState<OpcionesProceso | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsError, setOptionsError] = useState('');
+  const optionsAbort = useRef<AbortController | null>(null);
+  const optionsRequest = useRef(0);
   const [selected, setSelected] = useState<ProcesoPago | null>(null);
 
   const [chosen, setChosen] = useState<number[]>([]);
@@ -283,6 +296,7 @@ export function ProcesosPagoPage({
   const [date, setDate] = useState('');
   const [search, setSearch] = useState('');
   const [provider, setProvider] = useState('');
+  const [providerLabel, setProviderLabel] = useState('');
 
   const [status, setStatus] = useState(
     bandeja === 'autorizaciones' ? 'EN_REVISION' : '',
@@ -294,6 +308,8 @@ export function ProcesosPagoPage({
   const [paymentMethod, setPaymentMethod] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createStep, setCreateStep] = useState(0);
+  const wizardRef = useRef<HTMLFormElement>(null);
   const [vistaResumen, setVistaResumen] = useState<VistaResumen>('activos');
   const [overview, setOverview] = useState<ProcesoPago[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -328,6 +344,41 @@ export function ProcesosPagoPage({
           : JSON.stringify(body),
     });
 
+  // Esta consulta no necesita recargar las cuatro bandejas del resumen.
+  async function loadProviderOptions(query = search) {
+    optionsAbort.current?.abort();
+    const requestId = ++optionsRequest.current;
+    const controller = new AbortController();
+    optionsAbort.current = controller;
+    let timedOut = false;
+    setOptionsLoading(true);
+    setOptionsError('');
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 20000);
+    try {
+      const opts = await apiRequest<OpcionesProceso>(
+        `/cxp/procesos/opciones?proveedor=${encodeURIComponent(provider)}&search=${encodeURIComponent(query.trim())}`,
+        { headers, signal: controller.signal },
+      );
+      if (requestId !== optionsRequest.current) return;
+      setOptions(previous => ({ ...opts, documentos: [
+        ...opts.documentos,
+        ...(previous?.documentos ?? []).filter(doc => chosen.includes(doc.id) &&
+          doc.proveedor === Number(provider) && !opts.documentos.some(next => next.id === doc.id)),
+      ] }));
+    } catch (error) {
+      if (requestId !== optionsRequest.current || (controller.signal.aborted && !timedOut)) return;
+      setOptionsError(timedOut
+        ? 'La consulta tardó más de 20 segundos. Comprobá la conexión e intentá nuevamente.'
+        : error instanceof ApiError ? error.message : 'No se pudieron cargar las facturas. Comprobá que el servidor esté disponible.');
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestId === optionsRequest.current) setOptionsLoading(false);
+    }
+  }
+
   async function refresh(page = list.page) {
     const [rows, opts] = await Promise.all([
       call<ListaProcesos>(
@@ -344,7 +395,11 @@ export function ProcesosPagoPage({
     ]);
 
     setList(rows);
-    setOptions(opts);
+    setOptions(previous => ({ ...opts, documentos: [
+      ...opts.documentos,
+      ...(previous?.documentos ?? []).filter(doc => chosen.includes(doc.id) &&
+        doc.proveedor === Number(provider) && !opts.documentos.some(next => next.id === doc.id)),
+    ] }));
 
     setSelected(current =>
       current
@@ -446,7 +501,7 @@ export function ProcesosPagoPage({
           const result: ProcesoPago[] = [];
           let page = 1;
 
-          while (page <= 25) {
+          while (true) {
             const rows = await call<ListaProcesos>(
               `?page=${page}&bandeja=${lane}&estado=`,
             );
@@ -583,9 +638,20 @@ export function ProcesosPagoPage({
   }, [
     actorId,
     status,
-    provider,
     bandeja,
   ]);
+
+  useEffect(() => {
+    if (!createOpen || !provider || !actorId) return;
+    void loadProviderOptions();
+    return () => {
+      optionsAbort.current?.abort();
+      optionsRequest.current += 1;
+      setOptionsLoading(false);
+    };
+    // La búsqueda se ejecuta con su botón; el cambio de proveedor consulta sin filtro.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOpen, provider, actorId]);
 
   useEffect(() => {
     setStatus(
@@ -631,6 +697,42 @@ export function ProcesosPagoPage({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actorId, bandeja]);
+
+  useEffect(() => {
+    if (createOpen) wizardRef.current?.querySelector<HTMLElement>('[data-step-title]')?.focus();
+  }, [createOpen, createStep]);
+
+  // Keep keyboard navigation inside the active dialog and restore the opener.
+  useEffect(() => {
+    if (!createOpen && !selected && !modalError) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const timer = window.setTimeout(() => {
+      const dialogs = document.querySelectorAll<HTMLElement>('.cxp-process-page [aria-modal="true"]');
+      const dialog = modalError ? document.querySelector<HTMLElement>('[role="alertdialog"]') : dialogs[dialogs.length - 1];
+      dialog?.querySelector<HTMLElement>('button, input, select, [tabindex="-1"]')?.focus();
+    }, 0);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) {
+        if (modalError) setModalError('');
+        else if (document.querySelector('[data-provider-dialog]')) return;
+        else if (createOpen) setCreateOpen(false);
+        else setSelected(null);
+      }
+      if (event.key !== 'Tab') return;
+      const dialogs = document.querySelectorAll<HTMLElement>('.cxp-process-page [aria-modal="true"]');
+      const dialog = modalError ? document.querySelector<HTMLElement>('[role="alertdialog"]') : dialogs[dialogs.length - 1];
+      const controls = Array.from(dialog?.querySelectorAll<HTMLElement>('button, input, select, textarea, summary, a[href], [tabindex="0"]') ?? [])
+        .filter(control => !control.matches(':disabled') && control.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (!first) return;
+      if (event.shiftKey && (document.activeElement === first || !controls.includes(document.activeElement as HTMLElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { window.clearTimeout(timer); document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', onKey); opener?.focus(); };
+  }, [createOpen, Boolean(selected), Boolean(modalError), busy]);
 
   async function create() {
     await run(async () => {
@@ -766,7 +868,7 @@ export function ProcesosPagoPage({
 
       if (print) {
         requestAnimationFrame(
-          () => window.print(),
+          () => printReceipt(),
         );
       }
     }, {
@@ -795,6 +897,8 @@ export function ProcesosPagoPage({
     > = {},
   ) => (
     <TextInput
+      className={extra.type === 'date' ? 'cxp-field-date' : extra.type === 'number' ? 'cxp-field-number' : 'cxp-field-text'}
+      disabled={busy}
       label={label}
       value={value}
       onChange={(
@@ -807,6 +911,12 @@ export function ProcesosPagoPage({
       {...extra}
     />
   );
+
+  function printReceipt() {
+    const panel = document.getElementById('cxp-process-print')?.closest('details');
+    if (panel) panel.open = true;
+    window.requestAnimationFrame(() => window.print());
+  }
 
   const bandejaStep = etapaActual(null, bandeja);
 
@@ -840,19 +950,18 @@ export function ProcesosPagoPage({
       ? activeOverview
       : historyOverview;
 
-  const normalizedProcessSearch = processSearch.trim().toLowerCase();
+  const normalizeSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const normalizedProcessSearch = normalizeSearch(processSearch.trim());
 
   const visibleOverview = baseOverview.filter(process => {
     const matchesSearch =
       !normalizedProcessSearch ||
-      process.codigo.toLowerCase().includes(normalizedProcessSearch) ||
-      (process.proveedorNombre ?? '')
-        .toLowerCase()
+      normalizeSearch(process.codigo).includes(normalizedProcessSearch) ||
+      normalizeSearch(process.proveedorNombre ?? '')
         .includes(normalizedProcessSearch) ||
       String(process.proveedor).includes(normalizedProcessSearch) ||
       process.documentos.some(documento =>
-        documento.numero
-          .toLowerCase()
+        normalizeSearch(documento.numero)
           .includes(normalizedProcessSearch),
       );
 
@@ -889,31 +998,34 @@ export function ProcesosPagoPage({
     <CxpLayout
       resource="pagos"
       bandeja={bandeja}
+      searchQuery={processSearch}
+      onSearchChange={setProcessSearch}
     >
-      <div className="space-y-5">
+      <div className="cxp-process-page cxp-workspace space-y-5">
 
         {/* MODAL DE PROCESAMIENTO */}
 
-        {busyModal && (
+        {(busyModal || optionsLoading) && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-[1px]"
             role="status"
             aria-live="polite"
           >
-            <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
-              <div className="mx-auto mb-4 h-11 w-11 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+            <div className="cxp-feedback-dialog w-full max-w-sm">
+              <p className="cxp-dialog-eyebrow">Operación en curso</p>
 
               <h2 className="text-base font-semibold text-slate-900">
-                Procesando
+                {optionsLoading ? 'Cargando facturas del proveedor…' : 'Procesando'}
               </h2>
 
               <p className="mt-2 text-sm text-slate-600">
-                {busyMessage}
+                {optionsLoading ? 'Consultando facturas y cuentas disponibles. Puede tardar unos segundos.' : busyMessage}
               </p>
 
               <p className="mt-2 text-xs text-slate-400">
                 Esperá un momento. No cierres esta ventana.
               </p>
+              <div className="cxp-loading-track" aria-hidden="true"><span /></div>
             </div>
           </div>
         )}
@@ -927,19 +1039,17 @@ export function ProcesosPagoPage({
             aria-modal="true"
             aria-labelledby="cxp-operation-error-title"
           >
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-red-50 text-xl font-bold text-red-600">
-                !
-              </div>
+            <div className="cxp-feedback-dialog cxp-feedback-dialog--error w-full max-w-md">
+              <p className="cxp-dialog-eyebrow">Operación pendiente</p>
 
               <h2
                 id="cxp-operation-error-title"
-                className="mt-4 text-center text-base font-semibold text-slate-900"
+                className="mt-2 text-lg font-semibold text-slate-900"
               >
                 No se pudo completar la operación
               </h2>
 
-              <p className="mt-2 text-center text-sm text-slate-600">
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 {modalError}
               </p>
 
@@ -959,7 +1069,7 @@ export function ProcesosPagoPage({
                 </div>
               )}
 
-              <div className="mt-5 flex justify-center">
+              <div className="mt-5 flex justify-end border-t border-slate-100 pt-4">
                 <Button
                   onClick={() => setModalError('')}
                 >
@@ -979,13 +1089,13 @@ export function ProcesosPagoPage({
             aria-modal="true"
             aria-label="Nueva contraseña de pago"
             onMouseDown={event => {
-              if (event.target === event.currentTarget && !busy) {
+              if (event.target === event.currentTarget && !busy && !optionsLoading) {
                 setCreateOpen(false);
               }
             }}
           >
-            <section className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="mb-5 flex items-start justify-between gap-4">
+            <section className="cxp-process-dialog cxp-create-dialog">
+              <div className="cxp-dialog-heading">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">
                     Nueva contraseña de pago
@@ -996,23 +1106,46 @@ export function ProcesosPagoPage({
                 </div>
 
                 <Button
+                  icon={X}
+                  size="md"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || optionsLoading}
                   onClick={() => setCreateOpen(false)}
                 >
                   Cerrar
                 </Button>
               </div>
 
-              <div className="space-y-5">
+              <form ref={wizardRef} className="cxp-dialog-body space-y-5" onSubmit={event => {
+                event.preventDefault();
+                if (busy || optionsLoading || optionsError || document.querySelector('[data-provider-dialog]')) return;
+                if (createStep === 0 && (!provider || !chosen.length)) return;
+                if (createStep >= 1 && (!origin || !destination || !paymentMethod || !date)) return;
+                if (createStep < 2) setCreateStep(step => step + 1);
+                else void create();
+              }}>
+                <ol className="cxp-wizard-progress" aria-label="Pasos para crear contraseña">
+                  {['Facturas', 'Datos del pago', 'Revisar'].map((label, index) => <li key={label}
+                    aria-current={createStep === index ? 'step' : undefined}>
+                    <span>{index + 1}</span> {label}
+                  </li>)}
+                </ol>
+                <h3 className="font-semibold" tabIndex={-1} data-step-title>
+                  {['1. Seleccioná proveedor y facturas', '2. Indicá las cuentas y la fecha', '3. Revisá antes de crear'][createStep]}
+                </h3>
+                <fieldset hidden={createStep !== 0} disabled={busy || optionsLoading || createStep !== 0} className="space-y-5 min-w-0">
                 <RelationSelect
                   catalog="proveedores"
+                  id="cxp-process-provider"
+                  onLabelChange={setProviderLabel}
                   label="Proveedor"
                   required
-                  readOnly={busy}
+                  readOnly={busy || optionsLoading}
                   value={provider}
                   onChange={value => {
                     setProvider(value);
+                    setSearch('');
+                    setOptionsError('');
                     setChosen([]);
                     setOrigin('');
                     setDestination('');
@@ -1034,14 +1167,19 @@ export function ProcesosPagoPage({
 
                   <Button
                     variant="secondary"
-                    disabled={busy}
-                    onClick={() => run(() => refresh())}
+                    disabled={busy || optionsLoading || !provider}
+                    onClick={() => void loadProviderOptions()}
                   >
                     Buscar
                   </Button>
                 </div>
 
-                <div className="overflow-hidden rounded-xl border border-slate-200">
+                {optionsError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <p>{optionsError}</p>
+                  <Button type="button" variant="secondary" disabled={optionsLoading} onClick={() => void loadProviderOptions()}>Reintentar carga de facturas</Button>
+                </div>}
+
+                <div className="overflow-hidden rounded-xl border border-slate-200" aria-busy={optionsLoading}>
                   <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-sm font-semibold text-slate-800">
                       Facturas disponibles
@@ -1052,7 +1190,7 @@ export function ProcesosPagoPage({
                   </div>
 
                   <div className="max-h-60 divide-y overflow-auto px-4">
-                    {options?.documentos.map(documento => (
+                    {!optionsError && options?.documentos.map(documento => (
                       <label
                         key={documento.id}
                         className="flex cursor-pointer items-center gap-3 py-3 text-sm"
@@ -1061,7 +1199,7 @@ export function ProcesosPagoPage({
                           type="checkbox"
                           checked={chosen.includes(documento.id)}
                           disabled={
-                            busy ||
+                            busy || optionsLoading || !!optionsError ||
                             (!chosen.includes(documento.id) &&
                               chosen.length > 0 &&
                               options.documentos.some(
@@ -1088,10 +1226,10 @@ export function ProcesosPagoPage({
                       </label>
                     ))}
 
-                    {options?.documentos.length === 0 && (
+                    {!optionsError && !optionsLoading && (!provider || options?.documentos.length === 0) && (
                       <p className="py-4 text-sm text-slate-500">
                         {provider
-                          ? 'No hay facturas aprobadas con saldo disponible para este proveedor.'
+                          ? 'No hay facturas aprobadas con saldo disponible para este proveedor y los criterios actuales.'
                           : 'Seleccioná un proveedor para consultar sus facturas.'}
                       </p>
                     )}
@@ -1114,7 +1252,10 @@ export function ProcesosPagoPage({
                   </p>
                 </div>
 
+                </fieldset>
+                <fieldset hidden={createStep !== 1} disabled={busy || optionsLoading || createStep !== 1} className="space-y-5 min-w-0">
                 <Select
+                  className="cxp-field-text"
                   label="Medio de pago"
                   required
                   value={paymentMethod}
@@ -1208,18 +1349,34 @@ export function ProcesosPagoPage({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                </fieldset>
+                {createStep === 2 && <div className="cxp-review space-y-3 rounded-xl bg-slate-50 p-4">
+                  <p><strong>Proveedor:</strong> {providerLabel || `#${provider}`}</p>
+                  <p><strong>Medio de pago:</strong> {selectedForm?.nombre}</p>
+                  <p><strong>Cuenta de la empresa:</strong> {options?.origenes.find(c => String(c.id) === origin)?.nombre}</p>
+                  <p><strong>Cuenta del proveedor:</strong> {options?.destinos.find(c => String(c.id) === destination)?.nombre}</p>
+                  <p><strong>Fecha prevista:</strong> {formatDateGt(date)}</p>
+                  <ul>{options?.documentos.filter(d => chosen.includes(d.id)).map(d =>
+                    <li key={d.id}>{d.nombre} · {money(d.saldo, d.moneda)}</li>)}</ul>
+                  <p className="text-lg font-bold">Total: {money(cxpMoneySum(...(options?.documentos.filter(d => chosen.includes(d.id)).map(d => d.saldo) ?? [])), options?.documentos.find(d => chosen.includes(d.id))?.moneda)}</p>
+                  <p className="text-sm text-slate-600">Al crear se reservan las facturas. Su saldo todavía no cambia.</p>
+                </div>}
+                <div className="cxp-dialog-footer flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+                  {createStep > 0 && <Button variant="secondary" disabled={busy || optionsLoading} onClick={() => setCreateStep(step => step - 1)}>Anterior</Button>}
+                  {createStep < 2 && <Button type="submit" disabled={busy || optionsLoading || !!optionsError || (createStep === 0 ? !provider || !chosen.length : !origin || !destination || !paymentMethod || !date)}>Siguiente</Button>}
+
                   <Button
                     variant="secondary"
-                    disabled={busy}
+                    disabled={busy || optionsLoading}
                     onClick={() => setCreateOpen(false)}
                   >
                     Cancelar
                   </Button>
 
-                  <Button
+                  {createStep === 2 && <Button
+                    type="submit"
                     disabled={
-                      busy ||
+                      busy || optionsLoading || !!optionsError ||
                       !provider ||
                       chosen.length === 0 ||
                       !origin ||
@@ -1227,34 +1384,38 @@ export function ProcesosPagoPage({
                       !paymentMethod ||
                       !date
                     }
-                    onClick={create}
                   >
                     Crear contraseña ({chosen.length})
-                  </Button>
+                  </Button>}
                 </div>
-              </div>
+              </form>
             </section>
           </div>
         )}
 
-        {/* TÍTULO */}
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Gestión de Cuentas por Pagar
-            </h1>
-            <p className="text-sm text-slate-500">
-              Seguimiento del proceso completo, desde la recepción de la factura hasta su aplicación y cierre.
-            </p>
+        <header className="cxp-workspace-header">
+          <div className="cxp-workspace-heading">
+            <button type="button" className="cxp-workspace-back" onClick={() => navigate('/cxp')}>
+              <ArrowLeft size={14} aria-hidden="true" /> Cuentas por pagar
+            </button>
+            <h1>{lanePresentation[bandeja].title}</h1>
+            <p>{lanePresentation[bandeja].description}</p>
           </div>
-
-          {actor && bandeja === 'contrasenas' && can('CREAR') && (
-            <Button onClick={() => setCreateOpen(true)} disabled={busy}>
-              + Nueva contraseña
-            </Button>
-          )}
-        </div>
+          <div className="cxp-workspace-context">
+            <div className="cxp-workspace-operator">
+              <Select label="Usuario operativo" value={actorId}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) => cambiarActor(event.target.value)}
+                disabled={busy || optionsLoading}
+                options={[{ value: '', label: 'Seleccionar usuario…' },
+                  ...usuarios.map(usuario => ({ value: String(usuario.id), label: usuario.nombre }))]} />
+            </div>
+            {actor && bandeja === 'contrasenas' && can('CREAR') && (
+              <Button icon={Plus} onClick={() => { setCreateStep(0); setCreateOpen(true); }} disabled={busy}>
+                Nueva contraseña
+              </Button>
+            )}
+          </div>
+        </header>
 
         {/* MENSAJES */}
 
@@ -1276,154 +1437,31 @@ export function ProcesosPagoPage({
           </div>
         )}
 
-        {/* USUARIO OPERATIVO */}
-
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                Usuario
-                operativo
-              </p>
-
-              <p className="text-xs text-slate-500">
-                Las acciones del
-                proceso quedan
-                registradas con
-                este usuario de
-                Oracle.
-              </p>
-            </div>
-
-            <div className="min-w-0 md:w-80">
-
-              <Select
-                label="Operando como"
-                value={actorId}
-                onChange={(
-                  event: ChangeEvent<HTMLSelectElement>,
-                ) =>
-                  cambiarActor(
-                    event.target
-                      .value,
-                  )
-                }
-                disabled={busy}
-                options={[
-                  {
-                    value: '',
-                    label:
-                      'Seleccionar usuario…',
-                  },
-
-                  ...usuarios.map(
-                    usuario => ({
-                      value:
-                        String(
-                          usuario.id,
-                        ),
-
-                      label:
-                        `${usuario.nombre} · Usuario #${usuario.id}`,
-                    }),
-                  ),
-                ]}
-              />
-
-            </div>
-
-          </div>
-
-          {actor && (
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-
-              <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                ID #
-                {actor.id}
-              </span>
-
-            </div>
-          )}
-
-        </section>
-
-        {/* BANDEJA OPERATIVA / RESUMEN DEL FLUJO */}
-
+        {/* BANDEJA OPERATIVA */}
         {actor && (
           <div className="space-y-4">
-            <section className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setVistaResumen('activos')}
-                    className={[
-                      'rounded-lg border px-4 py-2 text-sm font-semibold transition',
-                      vistaResumen === 'activos'
-                        ? 'border-blue-200 bg-blue-50 text-blue-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-                    ].join(' ')}
-                  >
-                    Activas / En proceso
-                    <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">
-                      {activeOverview.length}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setVistaResumen('historial')}
-                    className={[
-                      'rounded-lg border px-4 py-2 text-sm font-semibold transition',
-                      vistaResumen === 'historial'
-                        ? 'border-blue-200 bg-blue-50 text-blue-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-                    ].join(' ')}
-                  >
-                    Historial / Finalizadas y rechazadas
-                    <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">
-                      {historyOverview.length}
-                    </span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
-                  Bandeja operativa de procesos de CXP
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <section className="cxp-workspace-card" aria-busy={overviewLoading}>
+              <div className="cxp-workspace-card-heading">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-semibold text-slate-900">
-                      Flujo de Cuentas por Pagar
-                    </h2>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                      8 etapas
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Hacé clic en una etapa para ir directamente a su bandeja de trabajo.
-                  </p>
+                  <h2>Solicitudes de pago</h2>
+                  <p>{overviewLoading ? 'Actualizando solicitudes…' : `${overview.length} solicitudes registradas`}</p>
                 </div>
-
-                <span className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  {overviewLoading
-                    ? 'Actualizando resumen…'
-                    : `${overview.length} procesos registrados`}
-                </span>
+                <div className="cxp-workspace-tools">
+                  <Button variant="ghost" size="sm" onClick={() => navigate('/cxp/lotes-pago')}>Lotes de pago</Button>
+                  <Button variant="ghost" size="sm" onClick={() => navigate('/cxp/aplicaciones')}>Aplicaciones</Button>
+                </div>
               </div>
 
+              <details className="cxp-workspace-flow" open>
+                <summary>
+                  <span>Etapas del proceso</span>
+                  <small>Consultá el flujo y navegá entre sus bandejas</small>
+                </summary>
               <div className="overflow-x-auto pb-2">
-                <div className="relative grid min-w-[980px] grid-cols-8 gap-0">
+                <div className="cxp-flow-grid relative grid grid-cols-8 gap-0">
                   <div
                     aria-hidden="true"
-                    className="absolute left-[6%] right-[6%] top-[18px] h-0.5 bg-slate-200"
+                    className="cxp-flow-line absolute left-[6%] right-[6%] top-[18px] h-0.5 bg-slate-200"
                   />
 
                   {flowGuide.map((step, index) => {
@@ -1434,7 +1472,7 @@ export function ProcesosPagoPage({
                         type="button"
                         key={`${step.label}-${index}`}
                         onClick={() => navigate(step.route)}
-                        className="relative z-10 flex flex-col items-center px-2 text-center"
+                        className="cxp-flow-tile relative z-10 flex flex-col items-center px-2 text-center"
                       >
                         <span
                           className={[
@@ -1468,77 +1506,51 @@ export function ProcesosPagoPage({
                   })}
                 </div>
               </div>
-            </section>
+              </details>
 
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-end lg:justify-between">
-                <div className="w-full lg:max-w-md">
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Buscar proceso
-                  </label>
+              <div className="cxp-workspace-views" aria-label="Vista de solicitudes">
+                <Button variant={vistaResumen === 'activos' ? 'primary' : 'secondary'}
+                  aria-pressed={vistaResumen === 'activos'} onClick={() => setVistaResumen('activos')}>
+                  En proceso <span className="cxp-workspace-count">{activeOverview.length}</span>
+                </Button>
+                <Button variant={vistaResumen === 'historial' ? 'primary' : 'secondary'}
+                  aria-pressed={vistaResumen === 'historial'} onClick={() => setVistaResumen('historial')}>
+                  Historial <span className="cxp-workspace-count">{historyOverview.length}</span>
+                </Button>
+              </div>
+
+              <div className="cxp-workspace-filters">
+                <div className="cxp-workspace-search">
+                  <label htmlFor="cxp-process-search">Buscar solicitud</label>
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                      ⌕
-                    </span>
-                    <input
-                      value={processSearch}
+                    <input id="cxp-process-search" type="search" value={processSearch}
                       onChange={event => setProcessSearch(event.target.value)}
-                      placeholder="Buscar por contraseña, proveedor o factura…"
-                      className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    />
+                      placeholder="Número, proveedor o factura…" />
                   </div>
                 </div>
-
-                <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
-                  <label className="text-xs font-semibold text-slate-600">
-                    Etapa
-                    <select
-                      value={dashboardStage}
-                      onChange={event => setDashboardStage(event.target.value)}
-                      className="mt-1 block h-10 min-w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-700"
-                    >
-                      <option value="all">Todas las etapas</option>
-                      {flowGuide.map((step, index) => (
-                        <option key={step.label} value={String(index)}>
-                          {step.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-xs font-semibold text-slate-600">
-                    Estado
-                    <select
-                      value={dashboardStatus}
-                      onChange={event => setDashboardStatus(event.target.value)}
-                      className="mt-1 block h-10 min-w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-700"
-                    >
-                      <option value="">Todos los estados</option>
-                      {Object.entries(titles).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <Button
-                    variant="secondary"
-                    disabled={busy || overviewLoading}
-                    onClick={() =>
-                      run(async () => {
-                        await refresh(1);
-                        await refreshOverview();
-                      })
-                    }
-                  >
-                    Actualizar
-                  </Button>
+                <label>Etapa
+                  <select value={dashboardStage} onChange={event => setDashboardStage(event.target.value)}>
+                    <option value="all">Todas las etapas</option>
+                    {flowGuide.map((step, index) => <option key={step.label} value={String(index)}>{step.label}</option>)}
+                  </select>
+                </label>
+                <label>Estado
+                  <select value={dashboardStatus} onChange={event => setDashboardStatus(event.target.value)}>
+                    <option value="">Todos los estados</option>
+                    {Object.entries(titles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+                <div className="cxp-workspace-filter-actions">
+                  <Button icon={RefreshCw} variant="secondary" disabled={busy || overviewLoading}
+                    onClick={() => run(async () => { await refresh(1); await refreshOverview(); })}>Actualizar</Button>
+                  {(processSearch || dashboardStatus || dashboardStage !== 'all') &&
+                    <Button variant="ghost" onClick={() => { setProcessSearch(''); setDashboardStatus(''); setDashboardStage('all'); }}>Limpiar filtros</Button>}
                 </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[940px] text-sm">
+                  <caption className="sr-only">Solicitudes de pago a proveedores</caption>
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3 text-left">Contraseña</th>
@@ -1570,7 +1582,7 @@ export function ProcesosPagoPage({
                           {money(process.total, process.moneda)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                          <span className={`cxp-workspace-status cxp-workspace-status--${process.estado}`}>
                             {titles[process.estado]}
                           </span>
                         </td>
@@ -1583,13 +1595,7 @@ export function ProcesosPagoPage({
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => gestionarProceso(process)}
-                            className="font-semibold text-blue-700 hover:text-blue-900"
-                          >
-                            Gestionar →
-                          </button>
+                          <Button icon={Eye} variant="secondary" onClick={() => gestionarProceso(process)}>Gestionar</Button>
                         </td>
                       </tr>
                     ))}
@@ -1598,13 +1604,9 @@ export function ProcesosPagoPage({
               </div>
 
               {visibleOverview.length === 0 && (
-                <div className="p-8 text-center">
-                  <p className="text-sm font-medium text-slate-700">
-                    No hay procesos para los filtros seleccionados.
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Probá cambiando la vista, la etapa o el estado.
-                  </p>
+                <div className="cxp-workspace-empty" role="status">
+                  <p>{overviewLoading ? 'Cargando solicitudes…' : overview.length === 0 ? 'Todavía no hay solicitudes registradas' : 'No hay solicitudes en esta vista'}</p>
+                  <small>{overviewLoading ? 'Estamos consultando la información disponible.' : overview.length === 0 ? 'Las solicitudes aparecerán aquí cuando se registren.' : 'Probá otra búsqueda, etapa o estado.'}</small>
                 </div>
               )}
 
@@ -1626,19 +1628,7 @@ export function ProcesosPagoPage({
 
         {!actor ? (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-
-            Seleccioná arriba
-            el usuario con el
-            que vas a realizar
-            el proceso.
-
-            {' '}
-
-            No necesitás iniciar
-            una segunda sesión
-            dentro de Cuentas
-            por Pagar.
-
+            Seleccioná un usuario operativo para consultar y gestionar las solicitudes de pago.
           </div>
         ) : (
           <>
@@ -1658,54 +1648,29 @@ export function ProcesosPagoPage({
                   }
                 }}
               >
-                <section className="max-h-[92vh] w-full max-w-5xl space-y-5 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-
-                <div className="flex items-center justify-between gap-3">
-
-                  <h2 className="text-lg font-semibold">
-
-                    {
-                      selected.codigo
-                    }
-
-                    {' · '}
-
-                    {
-                      titles[
-                        selected.estado
-                      ]
-                    }
-
-                  </h2>
-
-                  <div className="flex flex-wrap gap-2">
-
-                    {!selected.cheque && !selected.transferencia && (
-
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          window.print()
-                        }
-                      >
-                        Imprimir
-                        contraseña
+                <section className="cxp-process-dialog cxp-detail-dialog">
+                  <header className="cxp-dialog-heading">
+                    <div>
+                      <p className="cxp-dialog-eyebrow">Detalle de pago</p>
+                      <div className="cxp-dialog-title-row">
+                        <h2>{selected.codigo}</h2>
+                        <span className={'cxp-workspace-status cxp-workspace-status--' + selected.estado}>
+                          {titles[selected.estado]}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="cxp-dialog-heading-actions">
+                      {!selected.cheque && !selected.transferencia && (
+                        <Button variant="secondary" icon={Printer} size="md" onClick={() => printReceipt()}>
+                          Imprimir contraseña
+                        </Button>
+                      )}
+                      <Button variant="secondary" icon={X} size="md" disabled={busy} onClick={() => setSelected(null)}>
+                        Cerrar
                       </Button>
-
-                    )}
-
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => setSelected(null)}
-                    >
-                      Cerrar
-                    </Button>
-
-                  </div>
-
-                </div>
-
+                    </div>
+                  </header>
+                  <div className="cxp-dialog-body space-y-5">
                 <p className="text-sm text-slate-600">
 
                   Siguiente paso:{' '}
@@ -1753,7 +1718,7 @@ export function ProcesosPagoPage({
 
                 {['PROGRAMADA', 'CHEQUE_EMITIDO'].includes(selected.estado) && scheduledDate && (
                   <div
-                    className={`rounded-xl border p-4 ${
+                    className={`cxp-status-notice rounded-xl border p-4 ${
                       executionTooEarly
                         ? 'border-blue-200 bg-blue-50'
                         : executionOverdue
@@ -1762,17 +1727,7 @@ export function ProcesosPagoPage({
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div
-                        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg ${
-                          executionTooEarly
-                            ? 'bg-blue-100'
-                            : executionOverdue
-                              ? 'bg-amber-100'
-                              : 'bg-emerald-100'
-                        }`}
-                      >
-                        📅
-                      </div>
+
                       <div>
                         <p
                           className={`font-semibold ${
@@ -1812,11 +1767,9 @@ export function ProcesosPagoPage({
                 {selected.estado === 'PROGRAMADA' &&
                   options &&
                   !options.bancosConfigurados && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="cxp-status-notice rounded-xl border border-amber-200 bg-amber-50 p-4">
                       <div className="flex items-start gap-3">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-100 text-lg">
-                          🏦
-                        </div>
+
                         <div>
                           <p className="font-semibold text-amber-950">
                             Integración con Bancos no disponible
@@ -1824,94 +1777,37 @@ export function ProcesosPagoPage({
                           <p className="mt-1 text-sm text-amber-900">
                             El pago ya fue programado. Para continuar se requiere la integración de Bancos que genera el cheque o la transferencia según el medio seleccionado.
                           </p>
-                          <p className="mt-2 text-xs text-amber-800">
-                            No se utilizan mappings manuales ni instrumentos ficticios.
-                          </p>
                         </div>
                       </div>
                     </div>
                   )}
 
                 {/* CONSTANCIA IMPRIMIBLE */}
-
+                <details className="cxp-disclosure" open>
+                  <summary>Resumen y constancia</summary>
                 <div
                   id="cxp-process-print"
-                  className="space-y-2 rounded-lg border border-slate-200 p-4"
+                  className="cxp-receipt"
                 >
-
-                  <h3 className="font-bold">
-
+                  <h3 className="cxp-receipt-title">
                     {selected.cheque
-                      ? 'Constancia interna de cheque — no negociable'
-                      : selected.transferencia
-                        ? 'Constancia interna de transferencia'
-                        : 'Contraseña de pago'}
-
+                      ? 'Constancia interna de cheque - no negociable'
+                      : selected.transferencia ? 'Constancia interna de transferencia' : 'Contraseña de pago'}
                   </h3>
-
-                  <p>
-
-                    {
-                      selected.codigo
-                    }
-
-                    {' · '}
-
-                    {selected.proveedorNombre ??
-                      `Proveedor #${selected.proveedor}`}
-
-                    {' · '}
-
-                    {money(
-                      selected.total,
-                      selected.moneda,
-                    )}
-
-                  </p>
-
-                  <p className="text-sm">
-                    Estado:{' '}
-                    {
-                      titles[
-                        selected.estado
-                      ]
-                    }
-                  </p>
-
-                  <p className="text-sm">
-                    Medio de pago: <strong>{selected.formaPagoNombre}</strong>
-                  </p>
-
-                  <ul className="text-sm">
-
-                    {selected.documentos.map(
-                      documento => (
-
-                        <li
-                          key={
-                            documento.id
-                          }
-                        >
-
-                          Documento{' '}
-                          {
-                            documento.numero
-                          }
-
-                          :{' '}
-
-                          {money(
-                            documento.importe,
-                            selected.moneda,
-                          )}
-
-                        </li>
-
-                      ),
-                    )}
-
-                  </ul>
-
+                  <dl className="cxp-receipt-grid">
+                    <div><dt>Proveedor</dt><dd>{selected.proveedorNombre ?? ('Proveedor #' + selected.proveedor)}</dd></div>
+                    <div className="cxp-receipt-total"><dt>Importe de la solicitud</dt><dd>{money(selected.total, selected.moneda)}</dd></div>
+                    <div><dt>Medio de pago</dt><dd>{selected.formaPagoNombre}</dd></div>
+                    <div><dt>Estado</dt><dd>{titles[selected.estado]}</dd></div>
+                    <div><dt>Número de contraseña</dt><dd>{selected.codigo}</dd></div>
+                    <div><dt>Fecha programada</dt><dd>{selected.fechaProgramada ? formatDateGt(selected.fechaProgramada) : 'Por programar'}</dd></div>
+                  </dl>
+                  <div className="cxp-receipt-documents">
+                    <h4>Documentos incluidos ({selected.documentos.length})</h4>
+                    <ul>{selected.documentos.map(documento => (
+                      <li key={documento.id}><span>{documento.numero}</span><strong>{money(documento.importe, selected.moneda)}</strong></li>
+                    ))}</ul>
+                  </div>
                   {selected.cheque ? (
                     <>
                       <p>
@@ -1947,6 +1843,7 @@ export function ProcesosPagoPage({
 
                 </div>
 
+                </details>
                 {/* SOLICITAR */}
 
                 {bandeja ===
@@ -1975,7 +1872,7 @@ export function ProcesosPagoPage({
 
                       </div>
 
-                      <Button
+                      <Button icon={Send} size="md"
                         disabled={
                           busy
                         }
@@ -2001,12 +1898,8 @@ export function ProcesosPagoPage({
                 {selected.aprobaciones
                   .length > 0 && (
 
-                  <div>
-
-                    <h3 className="mb-2 font-semibold">
-                      Aprobaciones
-                      requeridas
-                    </h3>
+                  <details className="cxp-disclosure" open={selected.estado === 'EN_REVISION'}>
+                    <summary>Aprobaciones requeridas ({selected.aprobaciones.length})</summary>
 
                     <div className="space-y-2">
 
@@ -2014,7 +1907,7 @@ export function ProcesosPagoPage({
                         approval => (
 
                           <div
-                            className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm"
+                            className="cxp-approval-row"
                             key={
                               approval.id
                             }
@@ -2070,7 +1963,7 @@ export function ProcesosPagoPage({
                                 <>
 
                                   <Button
-                                    variant="success"
+                                    variant="success" icon={CheckCircle2} size="md"
                                     disabled={
                                       busy
                                     }
@@ -2091,7 +1984,7 @@ export function ProcesosPagoPage({
                                   </Button>
 
                                   <Button
-                                    variant="danger"
+                                    variant="danger" icon={XCircle} size="md"
                                     disabled={
                                       busy ||
                                       reason.trim()
@@ -2127,313 +2020,91 @@ export function ProcesosPagoPage({
 
                     </div>
 
-                  </div>
+                  </details>
 
                 )}
 
                 {/* MOTIVO */}
+                {selected.estado !== 'ANULADA' && (can('ANULAR') || can('APROBAR') || can('TESORERIA')) &&
+                  <TextArea label="Motivo de rechazo, anulación o reimpresión" value={reason}
+                    rows={3} maxLength={1000} isReadOnly={busy}
+                    helperText="Entre 5 y 1000 caracteres cuando la acción requiere un motivo."
+                    placeholder="Ej. El proveedor solicita corregir la fecha del pago"
+                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setReason(event.target.value)} />}
 
-                {selected.estado !==
-                  'ANULADA' &&
-                  (can(
-                    'ANULAR',
-                  ) ||
-                    can(
-                      'APROBAR',
-                    ) ||
-                    can(
-                      'TESORERIA',
-                    )) &&
-                  input(
-                    'Motivo de rechazo, anulación o reimpresión',
-                    reason,
-                    setReason,
-                    {
-                      maxLength:
-                        1000,
+                {/* Los datos de la operación van arriba; todas las acciones comparten una fila. */}
+                <div className="space-y-4">
+                  {bandeja === 'pagos' && selected.estado === 'APROBADA' && can('TESORERIA') &&
+                    input('Fecha de pago', date, setDate, {
+                      type: 'date', required: true, min: today, form: 'cxp-programar-pago',
+                    })}
 
-                      placeholder:
-                        'Ej. El proveedor solicita corregir la fecha del pago',
-                    },
-                  )}
+                  {bandeja === 'cheques' && selected.estado === 'CHEQUE_EMITIDO' && can('TESORERIA') && processIsCheque &&
+                    input('Persona que recibe el cheque', receiver, setReceiver, {
+                      maxLength: 200, placeholder: 'Nombre completo del receptor',
+                    })}
 
-                {/* ACCIONES */}
-
-                <div className="flex flex-wrap items-end gap-3">
-
-                  {/* PROGRAMAR */}
-
-                  {bandeja ===
-                    'pagos' &&
-                    selected.estado ===
-                      'APROBADA' &&
-                    can(
-                      'TESORERIA',
-                    ) && (
-
-                      <form
-                        className="flex items-end gap-3"
-                        onSubmit={
-                          event => {
-                            event.preventDefault();
-
-                            void act({
-                              accion:
-                                'programar',
-
-                              version:
-                                selected.version,
-
-                              fecha:
-                                date,
-                            });
-                          }
-                        }
-                      >
-
-                        {input(
-                          'Fecha de pago',
-                          date,
-                          setDate,
-                          {
-                            type:
-                              'date',
-
-                            required:
-                              true,
-
-                            min:
-                              today,
-                          },
-                        )}
-
-                        <Button
-                          type="submit"
-                          disabled={
-                            busy
-                          }
-                        >
-                          Programar
-                          pago
+                  <div role="group" aria-label="Acciones del pago"
+                    className="cxp-process-action-buttons flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                    {bandeja === 'pagos' && selected.estado === 'APROBADA' && can('TESORERIA') && (
+                      <form id="cxp-programar-pago" className="flex" onSubmit={event => {
+                        event.preventDefault();
+                        void act({ accion: 'programar', version: selected.version, fecha: date });
+                      }}>
+                        <Button type="submit" icon={CalendarClock} size="md" variant="primary" disabled={busy}>
+                          Programar pago
                         </Button>
-
                       </form>
                     )}
 
-                  {/* GENERAR MEDIO DE PAGO */}
-
-                  {bandeja ===
-                    'cheques' &&
-                    selected.estado ===
-                      'PROGRAMADA' &&
-                    can(
-                      'TESORERIA',
-                    ) && (
-
-                      <Button
-                        disabled={
-                          busy ||
-                          executionTooEarly ||
-                          !options?.bancosConfigurados
-                        }
-                        onClick={() =>
-                          act({
-                            accion:
-                              'emitir',
-
-                            version:
-                              selected.version,
-                          })
-                        }
-                      >
-                        {processIsCheque
-                          ? 'Emitir cheque'
-                          : processIsTransfer
-                            ? 'Generar transferencia'
-                            : 'Generar medio de pago'}
+                    {bandeja === 'cheques' && selected.estado === 'PROGRAMADA' && can('TESORERIA') && (
+                      <Button icon={Banknote} size="md" variant="primary"
+                        disabled={busy || executionTooEarly || !options?.bancosConfigurados}
+                        onClick={() => act({ accion: 'emitir', version: selected.version })}>
+                        {processIsCheque ? 'Emitir cheque' : processIsTransfer ? 'Generar transferencia' : 'Generar medio de pago'}
                       </Button>
-
                     )}
 
-                  {/* EJECUTAR MEDIO DE PAGO */}
-
-                  {bandeja ===
-                    'cheques' &&
-                    selected.estado ===
-                      'CHEQUE_EMITIDO' &&
-                    can(
-                      'TESORERIA',
-                    ) && (
-                      <>
-
-                        {processIsCheque && input(
-                          'Persona que recibe el cheque',
-                          receiver,
-                          setReceiver,
-                          {
-                            maxLength:
-                              200,
-
-                            placeholder:
-                              'Nombre completo del receptor',
-                          },
-                        )}
-
-                        <Button
-                          disabled={
-                            busy ||
-                            executionTooEarly ||
-                            (processIsCheque && receiver.trim().length < 3)
-                          }
-                          onClick={() =>
-                            act({
-                              accion:
-                                'entregar',
-
-                              version:
-                                selected.version,
-
-                              ...(processIsCheque
-                                ? { receptor: receiver }
-                                : {}),
-                            })
-                          }
-                        >
-                          {processIsCheque
-                            ? 'Entregar cheque y aplicar pago'
-                            : 'Ejecutar transferencia y aplicar pago'}
-                        </Button>
-
-                      </>
-                    )}
-
-                  {/* FINALIZAR / CONCILIAR */}
-
-                  {bandeja ===
-                    'cheques' &&
-                    selected.estado ===
-                      'ENTREGADO' &&
-                    can(
-                      'TESORERIA',
-                    ) && (
-
-                      <Button
-                        disabled={
-                          busy
-                        }
-                        onClick={() =>
-                          act({
-                            accion:
-                              'cobrar',
-
-                            version:
-                              selected.version,
-                          })
-                        }
-                      >
-                        {processIsCheque
-                          ? 'Confirmar cobro y finalizar'
-                          : 'Confirmar transferencia y finalizar'}
+                    {bandeja === 'cheques' && selected.estado === 'CHEQUE_EMITIDO' && can('TESORERIA') && (
+                      <Button icon={CheckCircle2} size="md" variant="primary"
+                        disabled={busy || executionTooEarly || (processIsCheque && receiver.trim().length < 3)}
+                        onClick={() => act({ accion: 'entregar', version: selected.version,
+                          ...(processIsCheque ? { receptor: receiver } : {}) })}>
+                        {processIsCheque ? 'Entregar y aplicar pago' : 'Ejecutar y aplicar pago'}
                       </Button>
-
                     )}
 
-                  {/* REIMPRESIÓN */}
-
-                  {bandeja ===
-                    'cheques' &&
-                    selected.cheque &&
-                    selected.estado !==
-                      'ANULADA' &&
-                    can(
-                      'TESORERIA',
-                    ) && (
-
-                      <Button
-                        variant="secondary"
-                        disabled={
-                          busy ||
-                          reason.trim()
-                            .length <
-                            5
-                        }
-                        onClick={() =>
-                          act(
-                            {
-                              accion:
-                                'reimprimir',
-
-                              version:
-                                selected.version,
-
-                              motivo:
-                                reason,
-                            },
-
-                            true,
-                          )
-                        }
-                      >
-                        Registrar
-                        reimpresión de
-                        constancia
+                    {bandeja === 'cheques' && selected.estado === 'ENTREGADO' && can('TESORERIA') && (
+                      <Button icon={CheckCircle2} size="md" variant="success" disabled={busy}
+                        onClick={() => act({ accion: 'cobrar', version: selected.version })}>
+                        {processIsCheque ? 'Confirmar cobro' : 'Confirmar transferencia'}
                       </Button>
-
                     )}
 
-                  {/* ANULAR */}
+                    {bandeja === 'cheques' && selected.cheque && selected.estado !== 'ANULADA' && can('TESORERIA') && (
+                      <Button icon={Printer} size="md" variant="secondary" disabled={busy || reason.trim().length < 5}
+                        onClick={() => act({ accion: 'reimprimir', version: selected.version, motivo: reason }, true)}>
+                        Reimprimir constancia
+                      </Button>
+                    )}
 
-                  {![
-                    'ANULADA',
-                    'COBRADO',
-                  ].includes(
-                    selected.estado,
-                  ) &&
-                    can(
-                      'ANULAR',
-                    ) && (
-
-                      <Button
-                        variant="danger"
-                        disabled={
-                          busy ||
-                          reason.trim()
-                            .length <
-                            5
-                        }
+                    {!['ANULADA', 'COBRADO'].includes(selected.estado) && can('ANULAR') && (
+                      <Button icon={Ban} size="md" variant="danger" disabled={busy || reason.trim().length < 5}
                         onClick={() => {
-                          if (
-                            window.confirm(
-                              '¿Anular esta contraseña y revertir sus aplicaciones, si existen? Se conservará el historial.',
-                            )
-                          ) {
-                            void act({
-                              accion:
-                                'anular',
-
-                              version:
-                                selected.version,
-
-                              motivo:
-                                reason,
-                            });
+                          if (window.confirm('¿Anular esta contraseña y revertir sus aplicaciones, si existen? Se conservará el historial.')) {
+                            void act({ accion: 'anular', version: selected.version, motivo: reason });
                           }
-                        }}
-                      >
+                        }}>
                         Anular
                       </Button>
-
                     )}
-
+                  </div>
                 </div>
 
                 {/* HISTORIAL */}
 
-                <div>
-
-                  <h3 className="mb-2 font-semibold">
-                    Historial
-                  </h3>
+                <details className="cxp-disclosure">
+                  <summary>Historial ({selected.historial.length})</summary>
 
                   <ol className="divide-y text-sm">
 
@@ -2488,9 +2159,9 @@ export function ProcesosPagoPage({
                     )}
 
                   </ol>
+                </details>
 
-                </div>
-
+                  </div>
                 </section>
               </div>
             )}

@@ -13,6 +13,7 @@ import type { CxpRecord, PaginatedResponse } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { apiClient, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
+import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';
 
 const states = [
@@ -190,10 +191,10 @@ export const CxpLotePagoPage = () => {
   }
 
   return (
-    <CxpLayout resource="lotes-pago">
+    <CxpLayout resource="lotes-pago" searchQuery={searchInput} onSearchChange={setSearchInput}>
       <div className="space-y-5">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-600">Cuentas por pagar · Pagos</p>
+          <CxpBreadcrumb group="Pagos" current="Lotes de pago" />
           <h1 className="text-2xl font-bold text-slate-900">Bandeja de lotes de pago</h1>
           <p className="mt-1 text-sm text-slate-500">
             Seguimiento operativo de los lotes generados por el flujo de pagos. Aquí no se editan registros manualmente.
@@ -252,12 +253,12 @@ export const CxpLotePagoPage = () => {
                 placeholder="Código, ID o descripción…"
                 value={searchInput}
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)}
-                className="min-w-64 flex-1"
+                className="cxp-field-text min-w-0 flex-1"
               />
               <Select
                 label="Estado"
                 value={status}
-                className="min-w-56"
+                className="cxp-filter-state"
                 options={[
                   { value: '', label: 'Todos los estados' },
                   ...states.map(value => ({ value, label: value.replace(/_/g, ' ') })),
@@ -296,7 +297,7 @@ export const CxpLotePagoPage = () => {
                     <td className="p-3 font-medium">{money(row.montoTotal, text(row.moneda) === '—' ? 'GTQ' : text(row.moneda))}</td>
                     <td className="p-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${stateBadge(row.estado)}`}>{text(row.estado).replace(/_/g, ' ')}</span></td>
                     <td className="p-3 text-right">
-                      <Button icon={Eye} variant="secondary" size="sm" disabled={opening} onClick={() => void open(row)}>Gestionar</Button>
+                      <Button icon={Eye} variant="secondary" size="md" disabled={opening} onClick={() => void open(row)}>Gestionar</Button>
                     </td>
                   </tr>
                 ))}
@@ -312,11 +313,11 @@ export const CxpLotePagoPage = () => {
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-3">
             <span className="text-xs text-slate-500">Página {meta.page} de {meta.totalPages} · {meta.total} registros</span>
             <div className="flex gap-2">
-              <Button icon={ChevronLeft} variant="secondary" size="sm" disabled={page <= 1 || isLoading} onClick={() => setPage(value => Math.max(1, value - 1))}>Anterior</Button>
-              <Button icon={ChevronRight} iconPosition="right" variant="secondary" size="sm" disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(value => value + 1)}>Siguiente</Button>
+              <Button icon={ChevronLeft} variant="secondary" size="md" disabled={page <= 1 || isLoading} onClick={() => setPage(value => Math.max(1, value - 1))}>Anterior</Button>
+              <Button icon={ChevronRight} iconPosition="right" variant="secondary" size="md" disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(value => value + 1)}>Siguiente</Button>
             </div>
           </div>
         </section>
@@ -324,8 +325,8 @@ export const CxpLotePagoPage = () => {
 
       {selected && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" onMouseDown={() => setSelected(null)}>
-          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-4 border-b border-blue-100 bg-blue-50 px-6 py-5">
+          <div role="dialog" aria-modal="true" aria-label="Detalle del registro" className="cxp-detail-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+            <div className="shrink-0 flex flex-wrap items-start justify-between gap-4 border-b border-blue-100 bg-blue-50 px-6 py-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Lote de pago</p>
                 <h2 className="mt-1 text-xl font-bold text-slate-900">{text(selected.codigoLote)}</h2>
@@ -334,7 +335,7 @@ export const CxpLotePagoPage = () => {
               <Button variant="secondary" onClick={() => setSelected(null)}>Cerrar</Button>
             </div>
 
-            <div className="max-h-[75vh] space-y-5 overflow-y-auto p-6">
+            <div className="cxp-detail-body min-h-0 space-y-5 overflow-y-auto p-6">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Estado</p><span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${stateBadge(selected.estado)}`}>{text(selected.estado).replace(/_/g, ' ')}</span></div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Fecha ejecución</p><p className="mt-2 font-semibold text-slate-900">{date(selected.fechaEjecucion)}</p></div>
@@ -342,8 +343,8 @@ export const CxpLotePagoPage = () => {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Monto total</p><p className="mt-2 font-semibold text-slate-900">{money(selected.montoTotal, text(selected.moneda) === '—' ? 'GTQ' : text(selected.moneda))}</p></div>
               </div>
 
-              <section className="rounded-xl border border-slate-200 p-5">
-                <h3 className="font-semibold text-slate-900">Datos operativos</h3>
+              <details className="cxp-disclosure">
+                <summary>Datos operativos</summary>
                 <div className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                   <p><span className="text-slate-500">Tipo:</span> <strong>{text(selected.tipoLote).replace(/_/g, ' ')}</strong></p>
                   <p><span className="text-slate-500">Moneda:</span> <strong>{text(selected.moneda)}</strong></p>
@@ -354,7 +355,7 @@ export const CxpLotePagoPage = () => {
                   <p><span className="text-slate-500">Enviado por:</span> <strong>{selected.enviadoPor ? `Usuario #${text(selected.enviadoPor)}` : '—'}</strong></p>
                   <p><span className="text-slate-500">Fecha envío:</span> <strong>{date(selected.fechaEnvio)}</strong></p>
                 </div>
-              </section>
+              </details>
 
               {showPayments && (
                 <section className="rounded-xl border border-slate-200 p-5">
@@ -399,7 +400,7 @@ export const CxpLotePagoPage = () => {
                               <td className="p-3">{date(payment.fechaProgramada)}</td>
                               <td className="p-3 font-medium">{money(payment.montoObligacion, text(payment.moneda) === '—' ? 'GTQ' : text(payment.moneda))}</td>
                               <td className="p-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${stateBadge(payment.estado)}`}>{text(payment.estado).replace(/_/g, ' ')}</span></td>
-                              <td className="p-3 text-right"><Button size="sm" onClick={() => openPayment(payment.idPago)}>Abrir flujo</Button></td>
+                              <td className="p-3 text-right"><Button size="md" onClick={() => openPayment(payment.idPago)}>Abrir flujo</Button></td>
                             </tr>
                           ))}
                         </tbody>
