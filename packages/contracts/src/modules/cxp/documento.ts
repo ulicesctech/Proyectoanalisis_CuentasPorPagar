@@ -216,7 +216,7 @@ export type UpdateCxpDocumentoInput = z.infer<typeof updateCxpDocumentoSchema>;
 
 /** Respuesta de lectura del expediente; el código del proceso se deriva del pago asociado. */
 export interface CxpDocumentoExpediente {
-  documento: CxpDocumento & { proveedorNombre: string | null };
+  documento: CxpDocumento & { proveedorNombre: string | null; sucursalNombre: string | null };
   lineas: CxpDocumentoDetalle[];
   tributos: CxpDocumentoTributo[];
   archivos: CxpArchivo[];

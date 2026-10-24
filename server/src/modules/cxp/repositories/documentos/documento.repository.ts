@@ -115,9 +115,13 @@ async function documentRows(connection: Connection, resource: CxpResource, where
 export async function getDocumentoExpedienteWithConnection(connection: Connection, id: number) {
   const documento = await cxpDocumentoRepository.bind(connection).findById(id);
   if (!documento) return null;
-  const provider = documento.idProveedor == null ? null : await connection.execute<{ PRO_NOMBRE_ENTIDAD: string | null }>(
-    'SELECT PRO_NOMBRE_ENTIDAD FROM PROVEEDOR WHERE PRO_ID_PROVEEDOR = :id',
-    { id: documento.idProveedor }, { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  const context = await connection.execute<{ PROVEEDOR_NOMBRE: string | null; SUCURSAL_NOMBRE: string | null }>(
+    `SELECT P.PRO_NOMBRE_ENTIDAD AS PROVEEDOR_NOMBRE, S.NOMBRE AS SUCURSAL_NOMBRE
+       FROM CXP_DOCUMENTO D
+       LEFT JOIN PROVEEDOR P ON P.PRO_ID_PROVEEDOR = D.ID_PROVEEDOR
+       LEFT JOIN CXC_SUCURSALES S ON S.ID_SUCURSAL = D.ID_SUCURSAL
+      WHERE D.ID_DOCUMENTO = :id`,
+    { id }, { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   const lineas = await documentRows(connection, 'documentos-detalle', 'ID_DOCUMENTO = :id', id, 'NUMERO_LINEA');
   const tributos = await documentRows(connection, 'documentos-tributos', 'ID_DOCUMENTO = :id', id, 'ID_TRIBUTO');
@@ -136,7 +140,11 @@ export async function getDocumentoExpedienteWithConnection(connection: Connectio
       (SELECT ID_APLICACION FROM CXP_APLICACION WHERE ID_DOCUMENTO_DESTINO = :id OR ID_DOCUMENTO_ORIGEN = :id)`,
     id, 'ID_ARCHIVO');
   return {
-    documento: { ...documento, proveedorNombre: provider?.rows?.[0]?.PRO_NOMBRE_ENTIDAD ?? null },
+    documento: {
+      ...documento,
+      proveedorNombre: context.rows?.[0]?.PROVEEDOR_NOMBRE ?? null,
+      sucursalNombre: context.rows?.[0]?.SUCURSAL_NOMBRE ?? null,
+    },
     lineas, tributos, archivos,
     aplicaciones: aplicaciones.map(item => ({
       ...item, codigoPagoProceso: processCodes.get(Number(item.idAplicacion)) ?? null,
