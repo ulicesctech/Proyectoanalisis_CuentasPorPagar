@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Save, X } from 'lucide-react';
 import {
   CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
@@ -6,6 +7,8 @@ import {
 import { apiClient, ApiError } from '../../../shared/api';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
+import { CxpButton } from './CxpButton';
+import { isCxpManagementResource } from './CxpManagementUI';
 
 export interface CxpFormProps {
   record?: CxpRecord | null;
@@ -13,6 +16,8 @@ export interface CxpFormProps {
   readOnly?: boolean;
   onSuccess: () => void;
   onCancel: () => void;
+  /** El contenedor puede impedir el cierre mientras se guarda. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const sectionsOrder = ['Datos generales', 'Relaciones', 'Fechas', 'Importes y cantidades', 'Estado y control', 'Información adicional', 'Auditoría'];
@@ -54,8 +59,11 @@ function placeholderFor(field: CxpFieldDefinition): string | undefined {
   return undefined;
 }
 
-export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel }: CxpFormProps & { resource: CxpResource }) {
+export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel, onBusyChange }: CxpFormProps & { resource: CxpResource }) {
   const entity = getCxpEntity(resource)!;
+  const management = isCxpManagementResource(resource);
+  const FormButton = management ? CxpButton : Button;
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
   const editing = !!record;
   const paymentForm = ['pagos', 'lotes-pago', 'aplicaciones'].includes(resource);
   const initial = useMemo(() => Object.fromEntries(entity.fields.map(field => {
@@ -74,6 +82,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   const asRecord = (source: Record<string, string>): CxpRecord => Object.fromEntries(entity.fields.map(field => [field.name,
     source[field.name] === '' ? null : field.type === 'number' ? Number(source[field.name]) : source[field.name],
@@ -83,6 +92,12 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   try { preview = prepareCxpRecord(resource, { ...raw, montoAplicado: record?.montoAplicado ?? 0 }); } catch { /* La validación indica el campo inválido al guardar. */ }
   const visible = entity.fields.filter(field => isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association));
   const sections = sectionsOrder.filter(name => visible.some(field => field.section === name));
+  const sectionIndex = sections.indexOf(section);
+  const lastSection = sectionIndex === sections.length - 1;
+  const goToSection = (next: string) => {
+    setSection(next);
+    window.setTimeout(() => sectionHeading.current?.focus(), 0);
+  };
 
   const change = (name: string, value: string) => {
     setValues(current => {
@@ -109,6 +124,8 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy || readOnly) return;
+    // Enter avanza de sección; la creación o edición solo se confirma al final.
+    if (management && !lastSection) { goToSection(sections[sectionIndex + 1]); return; }
     setErrors({});
     setFormError(null);
     const payload: CxpRecord = {};
@@ -154,7 +171,12 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       calculatedDocumentTerm ||
       (['documentos-detalle', 'documentos-tributos'].includes(resource) && field.name === 'idDocumento' &&
         (editing || !!initialValues.idDocumento));
-    const value = field.calculated ? String(preview[field.name] ?? '') : values[field.name];
+    let value = field.calculated ? String(preview[field.name] ?? '') : values[field.name];
+    // Los controles nativos de fecha no admiten el sufijo de zona del API.
+    // Se adapta únicamente la presentación; los valores originales se conservan.
+    if (management && value && (field.type === 'date' || field.type === 'datetime')) {
+      value = value.slice(0, field.type === 'date' ? 10 : 23);
+    }
     const props = { id: `cxp-${field.name}`, label: field.label, required: field.required && !field.readOnly,
       error: errors[field.name], value, isReadOnly: locked,
       className: paymentForm && !field.lookup && !field.options ? field.type === 'number' ? 'cxp-field-number' : field.type === 'date' ? 'cxp-field-date' : field.type === 'datetime' ? 'cxp-field-datetime' : 'cxp-field-text' : undefined };
@@ -164,7 +186,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       if (field.name === 'idDetalle' && resource === 'documentos-tributos' && values.idDocumento) { filterField = 'idDocumento'; filterValue = values.idDocumento; }
       if (field.name === 'idCuentaOrigen') { filterField = 'tipoTitular'; filterValue = 'EMPRESA'; }
       if (field.name === 'idCuentaDestino' && values.idProveedor) { filterField = 'idProveedor'; filterValue = values.idProveedor; }
-      return <RelationSelect key={field.name} {...props} catalog={field.lookup} readOnly={locked}
+      return <RelationSelect key={field.name} {...props} catalog={field.lookup} readOnly={locked} allowCreate={!management}
         filterField={filterField} filterValue={filterValue} onChange={next => change(field.name, next)} />;
     }
     // El estado solo ofrece los cambios que el flujo de trabajo permite desde el estado actual.
@@ -174,7 +196,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       && !(resource === 'documentos' && field.name === 'tipoDocumento' && option === 'FACTURA_ESPECIAL' && record?.tipoDocumento !== option));
     if (choices) return <Select key={field.name} {...props} placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...choices.map(option => ({ value: option, label: optionLabel(option) }))]}
       onChange={(event: React.ChangeEvent<HTMLSelectElement>) => change(field.name, event.target.value)} />;
-    if (field.type === 'textarea') return <TextArea key={field.name} {...props} rows={4} maxLength={field.maxLength ?? 30000}
+    if (field.type === 'textarea') return <TextArea key={field.name} {...props} rows={management ? 3 : 4} maxLength={field.maxLength ?? 30000}
       placeholder={placeholderFor(field)}
       className="sm:col-span-2" onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => change(field.name, event.target.value)} />;
     const futureRestricted = (field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name);
@@ -188,13 +210,23 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   };
 
   return (
-    <form noValidate onSubmit={submit} className="space-y-5">
-      <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-4" aria-label="Secciones del formulario">
+    <form noValidate onSubmit={submit} aria-busy={busy || undefined} className={management ? 'cxp-management-form' : 'space-y-5'}>
+      {management ? <div className="cxp-management-step">
+        <div className="cxp-management-step-heading">
+          <div><p className="cxp-management-eyebrow">Sección {sectionIndex + 1} de {sections.length}</p>
+            <h3 ref={sectionHeading} tabIndex={-1}>{section}</h3>
+          </div>
+          <Select className="cxp-management-step-selector" id="cxp-form-section" label="Ir a sección" value={section} isReadOnly={busy}
+            placeholder="" options={sections.map(name => ({ value: name, label: `${name}${visible.some(field => field.section === name && errors[field.name]) ? ' · Revisar' : ''}` }))}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => goToSection(event.target.value)} />
+        </div>
+        <progress value={sectionIndex + 1} max={sections.length} aria-label="Progreso del formulario" />
+      </div> : <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-4" aria-label="Secciones del formulario">
         {sections.map(name => <Button key={name} type="button" disabled={busy} onClick={() => setSection(name)}
           variant={section === name ? 'primary' : 'secondary'} aria-pressed={section === name}>
           {name}{entity.fields.some(field => field.section === name && errors[field.name]) && <span className="ml-1 text-red-500">●</span>}
         </Button>)}
-      </nav>
+      </nav>}
       {formError && <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{formError}</p>}
       {entity.associationFields && section === 'Relaciones' && <Select id="cxp-associated-entity" label="Entidad relacionada" required isReadOnly={readOnly || busy}
         value={association} options={entity.associationFields.map(name => ({ value: name, label: entity.fields.find(field => field.name === name)!.label }))}
@@ -205,12 +237,20 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
         }} />}
       {resource === 'aplicaciones' && section === 'Estado y control' && values.tipoAplicacion === 'COMPENSACION_CXC' &&
         <p className="text-sm text-slate-600">Confirma la compensación únicamente después de que Cuentas por Cobrar haya registrado su parte.</p>}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">{visible.filter(field => field.section === section).map(renderField)}</div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+      <div className={management ? 'cxp-management-fields' : 'grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4'}>
+        {visible.filter(field => field.section === section).map(field => management
+          ? <div key={field.name} className={`cxp-management-field cxp-management-field--${field.lookup || field.options ? 'lookup' : field.type}`}>{renderField(field)}</div>
+          : renderField(field))}
+      </div>
+      <div className={management ? 'cxp-management-form-footer' : 'flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4'}>
         <span className="text-xs text-slate-500">{readOnly ? 'Consulta del registro' : '* Campos obligatorios'}</span>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>{readOnly ? 'Cerrar' : 'Cancelar'}</Button>
-          {!readOnly && <Button type="submit" disabled={busy}>{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear registro'}</Button>}
+        <div className={management ? 'cxp-management-form-actions' : 'flex flex-wrap gap-2'}>
+          <FormButton type="button" icon={management ? X : undefined} variant="secondary" disabled={busy} onClick={onCancel}>{readOnly ? 'Cerrar' : 'Cancelar'}</FormButton>
+          {management && sectionIndex > 0 && <FormButton type="button" variant="secondary" icon={ChevronLeft} disabled={busy}
+            onClick={() => goToSection(sections[sectionIndex - 1])}>Anterior</FormButton>}
+          {management && !lastSection && <FormButton type="button" icon={ChevronRight} disabled={busy}
+            onClick={() => goToSection(sections[sectionIndex + 1])}>Siguiente</FormButton>}
+          {!readOnly && (!management || lastSection) && <FormButton type="submit" icon={management ? Save : undefined} disabled={busy}>{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear registro'}</FormButton>}
         </div>
       </div>
     </form>

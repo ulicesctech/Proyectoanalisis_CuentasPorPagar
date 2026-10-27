@@ -4,6 +4,7 @@ import { CXP_ENTITIES, getCxpEntity, type BandejaProceso, type CxpResource } fro
 import { Select, Sidebar } from '../../shared/ui-kit';
 import { CxpTopBar } from './components/CxpTopBar';
 import './cxp.css';
+const SHOW_SECTION_NAVIGATION = false;
 
 /** Grupos cuyas pantallas se abren desde la página de inicio /cxp y no muestran sub-pestañas. */
 const HOME_GROUPS = ['Configuración'];
@@ -51,7 +52,7 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} />
       <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-        {navigation.length > 0 && <>
+        {SHOW_SECTION_NAVIGATION && navigation.length > 0 && <>
           {group !== 'Pagos' && <div className="cxp-mobile-navigation mb-4">
             <Select label="Pantalla" value={active}
               options={navigation.map(item => ({ value: item.path, label: item.title }))}
