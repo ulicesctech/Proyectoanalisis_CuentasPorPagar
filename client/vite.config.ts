@@ -11,6 +11,8 @@ export default defineConfig({
   // El workspace de contratos se compila a CommonJS fuera de node_modules.
   optimizeDeps: {
     include: ['@erp/contracts'],
+    // El CJS del workspace cambia sin actualizar el lockfile. No reutilizar exports de una compilación anterior.
+    force: true,
   },
   build: {
     commonjsOptions: {

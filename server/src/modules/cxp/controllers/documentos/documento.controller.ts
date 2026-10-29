@@ -9,14 +9,25 @@ import { previewDocumentoDueDate } from '../../services/documentos/documento.due
 import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
 import { documentoPaymentOperations, listDocumentoEligiblePayments } from '../../services/documentos/documento.payment';
 import type { Request, Response, NextFunction } from 'express';
-import { actorForField, requireActorId, withActorField } from '../../services/actorFields';
+import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpActor } from '../../services/identidad';
 import { CxpError } from '../../services/errors';
+import { documentoComponentOperations } from '../../services/documentos/documento.componentes';
 
 const baseController = createCxpController(cxpDocumentoService);
 
 export const cxpDocumentoController = {
   ...baseController,
+  async components(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await documentoComponentOperations.read(Number(req.params.id))); } catch (error) { next(error); }
+  },
+  async saveComponents(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = cxpActor(res);
+      if (!actor) throw new CxpError('No hay usuario CXP activo en la sesión', 401);
+      res.json(await documentoComponentOperations.save(Number(req.params.id), req.body, actor));
+    } catch (error) { next(error); }
+  },
   async list(req: Request, res: Response, next: NextFunction) {
     if (req.query.filterField !== undefined) return baseController.list(req, res, next);
     try {
@@ -35,13 +46,8 @@ export const cxpDocumentoController = {
   },
   async approval(req: Request, res: Response, next: NextFunction) {
     try {
-      // El contexto se calcula para el usuario operativo; actorId (si viene) debe coincidir.
       const actor = cxpActor(res);
-      const requested = cxpStringQuery(req, 'actorId');
-      if (requested !== undefined && requested !== '') {
-        if (!actor) throw new CxpError('Selecciona el usuario con el que estás operando', 401);
-        actorForField(requested, actor.id, 'actorId');
-      }
+      if (!actor) throw new CxpError('No hay usuario CXP activo en la sesión', 401);
       res.json(await readDocumentoApprovalContext(Number(req.params.id), actor?.id));
     } catch (error) { next(error); }
   },

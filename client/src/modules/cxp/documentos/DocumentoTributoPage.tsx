@@ -1,4 +1,3 @@
-import { CxpCrudPage } from '../components/CxpCrudPage';
-import { CxpDocumentoTributoForm } from './components/DocumentoTributoForm';
+import { DocumentoConceptosPage } from './DocumentoConceptosPage';
 
-export const CxpDocumentoTributoPage = () => <CxpCrudPage resource="documentos-tributos" Form={CxpDocumentoTributoForm} />;
+export const CxpDocumentoTributoPage = () => <DocumentoConceptosPage resource="documentos-tributos" />;

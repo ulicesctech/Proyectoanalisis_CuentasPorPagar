@@ -13,6 +13,8 @@ export * from './periodo';
 export * from './cuenta-bancaria';
 export * from './compromiso';
 export * from './documento';
+export * from './documento-captura';
+export * from './documento-componentes';
 export * from './documento-detalle';
 export * from './documento-tributo';
 export * from './lote-pago';

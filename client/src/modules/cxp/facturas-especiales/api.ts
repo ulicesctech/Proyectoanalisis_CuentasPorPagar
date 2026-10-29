@@ -17,7 +17,8 @@ export const facturasEspecialesApi = {
 
   /** Descarga la constancia PDF desde el servidor (respuesta binaria, no JSON). */
   async descargarConstancia(id: number): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/cxp/facturas-especiales/${id}/constancia`);
+    const response = await fetch(`${API_BASE_URL}/cxp/facturas-especiales/${id}/constancia`, { credentials: 'include' });
+    if (response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new ApiError(body?.error ?? `Error ${response.status}`, response.status);

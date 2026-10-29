@@ -598,6 +598,9 @@ async function advanceTransfer(
   actor: ActorProceso,
   action: 'EJECUTAR' | 'CONFIRMAR' | 'ANULAR',
 ): Promise<TransferenciaProceso> {
+  // El agregado solo localiza el ID; FOR UPDATE bloquea la fila base y lee su
+  // estado en esta misma sentencia. FETCH FIRST con FOR UPDATE da ORA-02014.
+  // El flujo ya mantiene bloqueado CXP_PAGO en esta conexión/transacción.
   const result = await connection.execute<{
     TRANSFERENCIA_ID: number;
     OPERACION_ID: number;
@@ -611,8 +614,11 @@ async function advanceTransfer(
             CTA_PROVEEDOR_ID, MONTO_ORIGEN, ESTADO, REFERENCIA_BANCARIA
        FROM MB_TRANSFERENCIA_BANCARIA
       WHERE PAGO_ID = :paymentId
-      ORDER BY TRANSFERENCIA_ID DESC
-      FETCH FIRST 1 ROW ONLY
+        AND TRANSFERENCIA_ID = (
+          SELECT MAX(T.TRANSFERENCIA_ID)
+            FROM MB_TRANSFERENCIA_BANCARIA T
+           WHERE T.PAGO_ID = :paymentId
+        )
       FOR UPDATE`,
     { paymentId: p.id },
     object,

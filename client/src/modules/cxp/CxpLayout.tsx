@@ -39,8 +39,8 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
   const { actor } = useOperador();
   // El Sidebar es de solo lectura (components/ui): solo muestra con qué usuario se opera.
   const sidebarUser = actor
-    ? { name: actor.nombre, role: 'Usuario operativo', initials: actor.nombre.split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || 'CP' }
-    : { name: 'Sin usuario operativo', role: 'Elige "Operando como"', initials: 'CP' };
+    ? { name: actor.nombre, role: actor.nombreRol ?? 'Rol activo', initials: actor.nombre.split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || 'CP' }
+    : { name: 'Sin usuario CXP', role: 'Acceso restringido', initials: 'CP' };
   const active = bandeja ?? resource ?? screen;
   const group = resource ? getCxpEntity(resource)!.group : screen ? CXP_SCREENS.find(item => item.path === screen)!.group : undefined;
   const navigation = !group || HOME_GROUPS.includes(group) ? [] : group === 'Pagos'

@@ -64,6 +64,7 @@ export function collectDocumentoValidationIssues(
 
   const taxAmounts: number[] = [];
   const withholdingAmounts: number[] = [];
+  const generalTaxes: number[] = [], generalRetentions: number[] = [];
   tributes.forEach((tribute, index) => {
     const field = (name: string) => `tributos[${index}].${name}`;
     for (const key of ['ID_TRIBUTO', 'TIPO_TRIBUTO', 'CODIGO_TRIBUTO', 'NOMBRE_TRIBUTO', 'BASE_IMPONIBLE', 'PORCENTAJE', 'MONTO', 'MONTO_RECUPERABLE', 'MONTO_NO_RECUPERABLE', 'INCLUIDO_PRECIO', 'FECHA_APLICACION', 'GENERADO_POR', 'ESTADO']) {
@@ -74,6 +75,10 @@ export function collectDocumentoValidationIssues(
       if (amount(tribute[key]) < 0) fail(field(key), 'El importe no puede ser negativo');
     }
     if (tribute.ESTADO === 'ANULADO') return;
+    if (tribute.TIPO_TRIBUTO === 'IMPUESTO') {
+      const recovery = cxpMoneySum(amount(tribute.MONTO_RECUPERABLE), amount(tribute.MONTO_NO_RECUPERABLE));
+      if (recovery !== 0 && recovery !== amount(tribute.MONTO)) fail(field('MONTO_RECUPERABLE'), 'El desglose recuperable y no recuperable debe sumar el monto.');
+    }
     if (tribute.INCLUIDO_PRECIO === 'S' && amount(tribute.MONTO) !== 0) {
       fail(field('INCLUIDO_PRECIO'), 'Falta definir cómo conciliar tributos incluidos en precio');
     }
@@ -82,6 +87,8 @@ export function collectDocumentoValidationIssues(
     }
     if (tribute.TIPO_TRIBUTO === 'IMPUESTO') taxAmounts.push(amount(tribute.MONTO));
     if (tribute.TIPO_TRIBUTO === 'RETENCION') withholdingAmounts.push(amount(tribute.MONTO));
+    if (tribute.ID_DETALLE == null && tribute.TIPO_TRIBUTO === 'IMPUESTO') generalTaxes.push(amount(tribute.MONTO));
+    if (tribute.ID_DETALLE == null && tribute.TIPO_TRIBUTO === 'RETENCION') generalRetentions.push(amount(tribute.MONTO));
   });
 
   const reconcile = (field: string, actual: number, expected: number) => {
@@ -89,9 +96,15 @@ export function collectDocumentoValidationIssues(
   };
   reconcile('subtotal', amount(document.subtotal), sum(lineGross));
   reconcile('descuentoTotal', amount(document.descuentoTotal), sum(lineDiscounts));
-  reconcile('impuestoTotal', amount(document.impuestoTotal), sum(lineTaxes));
+  reconcile('impuestoTotal', amount(document.impuestoTotal), sum([...lineTaxes, ...generalTaxes]));
   reconcile('impuestoTotal', amount(document.impuestoTotal), sum(taxAmounts));
-  reconcile('retencionTotal', amount(document.retencionTotal), sum(lineRetentions));
+  reconcile('retencionTotal', amount(document.retencionTotal), sum([...lineRetentions, ...generalRetentions]));
   reconcile('retencionTotal', amount(document.retencionTotal), sum(withholdingAmounts));
+  details.forEach((detail, index) => {
+    for (const [type, column] of [['IMPUESTO', 'IMPUESTO'], ['RETENCION', 'RETENCION']]) {
+      const linked = tributes.filter(tax => tax.ESTADO !== 'ANULADO' && tax.TIPO_TRIBUTO === type && tax.ID_DETALLE === detail.ID_DETALLE);
+      reconcile(`detalles[${index}].${column}`, amount(detail[column]), sum(linked.map(tax => amount(tax.MONTO))));
+    }
+  });
   return issues;
 }

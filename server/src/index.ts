@@ -7,17 +7,24 @@ import { cxpErrorHandler } from './modules/cxp/controllers/errorHandler';
 import { errorHandler } from './middlewares';
 import { initOraclePool, closeOraclePool } from './config/database';
 import { config } from './config';
+import authRoutes, { authErrorHandler, requireAllowedOrigin, requireSession, requireCsrf } from './modules/auth/routes';
 
 const app = express();
 const PORT = config.port;
 const HOST = config.host;
 
-// Solo los orígenes configurados (CORS_ORIGINS). CORS no impide llamadas fuera del
-// navegador: la identidad de CXP sigue siendo provisional hasta tener inicio de sesión.
-app.use(cors({
-  origin: config.corsOrigins,
-  allowedHeaders: ['Content-Type', 'X-CXP-Actor-Id', 'X-File-Name'],
-  exposedHeaders: ['Content-Disposition'],
+// Solo los orígenes configurados (CORS_ORIGINS). CXP comprueba sesión y CSRF
+// en el servidor; CORS por sí mismo no autentica solicitudes.
+app.use(cors((req, callback) => {
+  const sessionRoute = req.path.startsWith('/api/auth') || req.path.startsWith('/api/cxp');
+  callback(null, {
+    origin: config.corsOrigins,
+    credentials: sessionRoute,
+    allowedHeaders: sessionRoute
+      ? ['Content-Type', 'X-CSRF-Token', 'X-File-Name']
+      : ['Content-Type', 'X-CXP-Actor-Id', 'X-File-Name'],
+    exposedHeaders: ['Content-Disposition'],
+  });
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -32,7 +39,8 @@ app.get('/health', (_req, res) => {
 
 // Rutas del módulo Cuentas por Cobrar
 app.use('/api/cxc', cxcRoutes);
-app.use('/api/cxp', cxpRoutes, cxpErrorHandler);
+app.use('/api/auth', authRoutes, authErrorHandler);
+app.use('/api/cxp', requireAllowedOrigin, requireSession, requireCsrf, cxpRoutes, cxpErrorHandler);
 // TODO: cuando estén listos, agregar de la misma forma:
 // app.use('/api/compras', comprasRoutes);
 // app.use('/api/bancos', bancosRoutes);
@@ -49,7 +57,7 @@ async function bootstrap() {
         `[ERP Server]: API base corriendo en http://${HOST}:${PORT}`,
       );
       console.log(`[ERP Server]: CORS permitido para ${config.corsOrigins.join(', ')}`);
-      console.log(`[ERP Server]: identidad CXP en modo ${config.cxpAuthMode} (no autentica usuarios)`);
+      console.log('[ERP Server]: CXP requiere una sesión autenticada');
     });
 
     const shutdown = async () => {
@@ -64,7 +72,10 @@ async function bootstrap() {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   } catch (error) {
-    console.error('[ERP Server]: Error fatal al iniciar', error);
+    console.error('[ERP Server]: Error fatal al iniciar', {
+      name: error instanceof Error ? error.name : 'Error',
+      code: (error as { code?: string })?.code,
+    });
     process.exit(1);
   }
 }

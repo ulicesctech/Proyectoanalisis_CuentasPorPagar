@@ -11,6 +11,7 @@ import { Modal } from '../../../shared/components';
 import { Button, DataTable, TextArea } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { CxpDocumentoForm } from './components/DocumentoForm';
+import { DocumentoComponentesPanel } from './components/DocumentoComponentesPanel';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { DocumentoPagoPanel } from './components/DocumentoPagoPanel';
 import { DocumentoFlow, DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
@@ -120,6 +121,7 @@ export function CxpDocumentoExpedientePage() {
   const [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [componentDirty, setComponentDirty] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [approval, setApproval] = useState<ApprovalContext | null>(null);
@@ -141,7 +143,7 @@ export function CxpDocumentoExpedientePage() {
     setLoadError(null);
     Promise.all([
       apiClient.get<CxpDocumentoExpediente>(`/cxp/documentos/${id}/expediente`),
-      apiClient.get<ApprovalContext>(`/cxp/documentos/${id}/aprobacion${buildQueryString({ actorId: actorId || undefined })}`),
+      apiClient.get<ApprovalContext>(`/cxp/documentos/${id}/aprobacion`),
       apiClient.get<DocumentoDteFile[]>(`/cxp/documentos/${id}/archivos`),
     ])
       .then(([result, approvalResult, files]) => { if (active) { setExpediente(result); setApproval(approvalResult); setDteFiles(files); } })
@@ -159,7 +161,7 @@ export function CxpDocumentoExpedientePage() {
     let active = true;
     setApprovalLoading(true);
     setDecisionError(null);
-    apiClient.get<ApprovalContext>(`/cxp/documentos/${id}/aprobacion${buildQueryString({ actorId: actorId || undefined })}`)
+    apiClient.get<ApprovalContext>(`/cxp/documentos/${id}/aprobacion`)
       .then(result => { if (active) setApproval(result); })
       .catch(reason => { if (active) setDecisionError(reason instanceof ApiError ? reason.message : 'No se pudo comprobar la autorización.'); })
       .finally(() => { if (active) setApprovalLoading(false); });
@@ -249,7 +251,7 @@ export function CxpDocumentoExpedientePage() {
       await apiClient.post(`/cxp/documentos/${id}/aplicaciones/${reversingId}/revertir`, {
         revertidoPor: Number(reverterId), motivoReverso: reversalReason.trim(),
       });
-      setReversingId(null); setReverterId(''); setReversalReason('');
+      setReversingId(null); setReverterId(getOperadorId()); setReversalReason('');
       setNotice('Aplicación revertida. Se actualizaron los saldos del documento y del pago.');
       setRefresh(value => value + 1);
     } catch (reason) {
@@ -299,7 +301,7 @@ export function CxpDocumentoExpedientePage() {
               <span>Total neto <strong className="text-slate-900 ml-1">{formatDocumentoMoney(document.totalNeto, currency)}</strong></span>
               <span>Aplicado <strong className="text-slate-900 ml-1">{formatDocumentoMoney(document.montoAplicado, currency)}</strong></span>
             </div>
-            <button type="button" onClick={() => setRefresh(value => value + 1)} className="inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-800"><RefreshCw size={14} /> Actualizar</button>
+            <button type="button" disabled={componentDirty} onClick={() => setRefresh(value => value + 1)} className="inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"><RefreshCw size={14} /> Actualizar</button>
           </div>
         </section>
 
@@ -311,19 +313,17 @@ export function CxpDocumentoExpedientePage() {
           <p className="text-sm text-slate-600 mt-1">{guide.description}</p>
           {guide.blocker && <p className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 text-sm text-amber-900">{guide.blocker}</p>}
           {document.estado === 'RECIBIDO' && <div className="flex flex-wrap items-center gap-2 mt-4">
-            {!document.idProveedor ? <Button onClick={() => setEditing(true)}>Completar proveedor</Button>
-              : !hasDte ? <Button icon={Upload} onClick={() => window.document.getElementById('expediente-dte')?.click()}>Adjuntar DTE</Button>
-                : !expediente.lineas.length ? <Link to={`/cxp/documentos-detalle?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Gestionar líneas</Link>
-                  : <Button icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
-            {hasDte && (!document.idProveedor || !expediente.lineas.length) && <Button variant="secondary" icon={ShieldCheck} disabled={validating} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
-            {document.idProveedor && expediente.lineas.length > 0 && <Button variant="secondary" onClick={() => setEditing(true)}>Editar cabecera</Button>}
-            {expediente.lineas.length > 0 && <Link to={`/cxp/documentos-detalle?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Gestionar líneas</Link>}
-            <Link to={`/cxp/documentos-tributos?filterField=idDocumento&filterValue=${document.idDocumento}`} className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Gestionar tributos</Link>
+            {!document.idProveedor ? <Button disabled={componentDirty} onClick={() => setEditing(true)}>Completar proveedor</Button>
+              : !hasDte ? <Button disabled={componentDirty} icon={Upload} onClick={() => window.document.getElementById('expediente-dte')?.click()}>Adjuntar DTE</Button>
+                : !expediente.lineas.length ? <a href="#conceptos-documento" className="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Capturar conceptos</a>
+                  : <Button icon={ShieldCheck} disabled={validating || componentDirty} onClick={validate}>{validating ? 'Validando…' : componentDirty ? 'Guarda los conceptos antes de validar' : 'Validar documento'}</Button>}
+            {hasDte && (!document.idProveedor || !expediente.lineas.length) && <Button variant="secondary" icon={ShieldCheck} disabled={validating || componentDirty} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
+            {document.idProveedor && expediente.lineas.length > 0 && <Button disabled={componentDirty} variant="secondary" onClick={() => setEditing(true)}>Editar cabecera</Button>}
+            <a href="#conceptos-documento" className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Líneas y tributos</a>
           </div>}
           {document.estado === 'PENDIENTE_APROBACION' && <div className="border-t border-slate-100 mt-4 pt-4 space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_1fr] gap-4 items-start">
-              <DocumentoCatalogPicker id="approval-actor" label="Responsable de la decisión" catalog="usuarios"
-                value={actorId} onChange={setActorId} placeholder="Seleccionar usuario responsable…" required />
+              <p className="text-sm text-slate-700">Decisión registrada por el usuario autenticado.</p>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aprobaciones requeridas</p>
                 {approvalLoading && <p className="text-sm text-slate-500 mt-2">Comprobando autorización…</p>}
@@ -339,7 +339,7 @@ export function CxpDocumentoExpedientePage() {
                 </div>)}
               </div>
             </div>
-            {!actorId && <p className="text-sm text-slate-600">Selecciona al responsable para comprobar qué decisión puede registrar.</p>}
+            {!actorId && <p className="text-sm text-slate-600">No hay usuario CXP en la sesión.</p>}
             {actorId && approval?.actor?.impedimento && <p className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-900">
               {approval.actor.impedimento}
             </p>}
@@ -387,31 +387,7 @@ export function CxpDocumentoExpedientePage() {
           </dl>
         </section>
 
-        <section className="space-y-3" aria-label="Líneas del documento">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold text-slate-900">Líneas <span className="text-slate-400 font-medium">({expediente.lineas.length})</span></h2></div>
-          <DataTable data={expediente.lineas} emptyText="Este documento todavía no tiene líneas."
-            columns={[
-              { header: '#', accessorKey: 'numeroLinea' },
-              { header: 'Descripción', accessorKey: 'descripcion' },
-              { header: 'Cantidad', accessorKey: 'cantidad', align: 'right' },
-              { header: 'Precio unitario', align: 'right', cell: ({ row }: { row: CxpDocumentoDetalle }) => formatDocumentoMoney(row.precioUnitario, currency) },
-              { header: 'Impuesto', align: 'right', cell: ({ row }: { row: CxpDocumentoDetalle }) => formatDocumentoMoney(row.impuesto, currency) },
-              { header: 'Total línea', align: 'right', cell: ({ row }: { row: CxpDocumentoDetalle }) => <strong>{formatDocumentoMoney(row.totalLinea, currency)}</strong> },
-            ]} />
-        </section>
-
-        <section className="space-y-3" aria-label="Tributos del documento">
-          <h2 className="font-bold text-slate-900">Tributos <span className="text-slate-400 font-medium">({expediente.tributos.length})</span></h2>
-          <DataTable data={expediente.tributos} emptyText="No hay tributos asociados a este documento."
-            columns={[
-              { header: 'Tipo', cell: ({ row }: { row: CxpDocumentoTributo }) => readableState(row.tipoTributo) },
-              { header: 'Código', accessorKey: 'codigoTributo' },
-              { header: 'Base', align: 'right', cell: ({ row }: { row: CxpDocumentoTributo }) => formatDocumentoMoney(row.baseImponible, currency) },
-              { header: 'Monto', align: 'right', cell: ({ row }: { row: CxpDocumentoTributo }) => formatDocumentoMoney(row.monto, currency) },
-              { header: 'Incluido en precio', cell: ({ row }: { row: CxpDocumentoTributo }) => row.incluidoPrecio === 'S' ? 'Sí' : 'No' },
-              { header: 'Estado', cell: ({ row }: { row: CxpDocumentoTributo }) => readableState(row.estado) },
-            ]} />
-        </section>
+        <div id="conceptos-documento"><DocumentoComponentesPanel id={document.idDocumento} onSaved={() => setRefresh(value => value + 1)} onDirtyChange={setComponentDirty} /></div>
 
         <section className="space-y-3" aria-label="Archivos asociados">
           <div><h2 className="font-bold text-slate-900">Archivos <span className="text-slate-400 font-medium">({expediente.archivos.length})</span></h2>
@@ -421,7 +397,7 @@ export function CxpDocumentoExpedientePage() {
             <input id="expediente-dte" type="file" accept=".pdf,.xml,application/pdf,application/xml,text/xml"
               onChange={event => setUploadFile(event.target.files?.[0] ?? null)} className="block w-full text-sm text-slate-700" />
             <p className="text-xs text-blue-800">El contenido se conserva con su expediente. Después completa líneas y tributos; la carga no extrae los datos automáticamente.</p>
-            <Button icon={Upload} disabled={!uploadFile || uploadBusy} onClick={uploadDte}>{uploadBusy ? 'Adjuntando…' : 'Adjuntar DTE'}</Button>
+            <Button icon={Upload} disabled={!uploadFile || uploadBusy || componentDirty} onClick={uploadDte}>{uploadBusy ? 'Adjuntando…' : 'Adjuntar DTE'}</Button>
           </div>}
           {uploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uploadError}</p>}
           <DataTable data={expediente.archivos} emptyText="No hay archivos asociados."
@@ -476,8 +452,7 @@ export function CxpDocumentoExpedientePage() {
         <Modal isOpen={reversingId !== null} onClose={() => { if (!reversalBusy) setReversingId(null); }} title="Revertir aplicación de pago" size="md">
           <div className="space-y-4">
             <p className="text-sm text-slate-600">La aplicación #{reversingId} quedará en el historial y se restaurarán los saldos.</p>
-            <DocumentoCatalogPicker id="reversal-actor" label="Usuario que registra la reversión" catalog="usuarios"
-              value={reverterId} onChange={setReverterId} required />
+            <p className="text-sm text-slate-700">Reversión registrada por el usuario autenticado.</p>
             <TextArea label="Motivo de reversión" value={reversalReason}
               onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setReversalReason(event.target.value)}
               rows={3} maxLength={1000} />

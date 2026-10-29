@@ -2,10 +2,18 @@ import { createCxpRouter } from '../crud.routes';
 import { cxpDocumentoController } from '../../controllers/documentos/documento.controller';
 import { raw } from 'express';
 import { dteMaxBytes } from '../../services/documentos/dte.storage';
+import { Router } from 'express';
+import { documentoMonedas } from '../../repositories/documentos/documentoMoneda.repository';
 
-const router = createCxpRouter(cxpDocumentoController);
+const router = Router();
+router.get('/monedas', async (_req, res, next) => {
+  try { res.json(await documentoMonedas()); } catch (error) { next(error); }
+});
+router.use(createCxpRouter(cxpDocumentoController));
 router.post('/calcular-vencimiento', cxpDocumentoController.previewDueDate);
 router.get('/:id/expediente', cxpDocumentoController.expediente);
+router.get('/:id/componentes', cxpDocumentoController.components);
+router.patch('/:id/componentes', cxpDocumentoController.saveComponents);
 router.post('/:id/validar', cxpDocumentoController.validate);
 router.get('/:id/aprobacion', cxpDocumentoController.approval);
 router.post('/:id/aprobacion', cxpDocumentoController.decideApproval);

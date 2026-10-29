@@ -2,10 +2,13 @@
 // módulos: todo el equipo pasa por aquí para que la base URL, el manejo de
 // errores y el formato de respuesta sean consistentes en toda la app.
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
+import { sessionCsrfToken } from '../../modules/cxp/auth/session';
+import { API_BASE_URL } from './base';
+
+const BASE_URL = API_BASE_URL;
 
 /** Base del API para descargas de archivos (p. ej. PDF), que no pasan por apiClient (JSON). */
-export const API_BASE_URL = BASE_URL;
+export { API_BASE_URL };
 
 export class ApiError extends Error {
   constructor(
@@ -19,13 +22,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const csrf = path.startsWith('/cxp/') && !['GET', 'HEAD'].includes(options.method ?? 'GET') ? sessionCsrfToken() : null;
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
+    credentials: path.startsWith('/cxp/') ? 'include' : options.credentials,
     headers: {
       'Content-Type': 'application/json',
+      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       ...options.headers,
     },
   });
+  if (path.startsWith('/cxp/') && response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
 
   if (response.status === 204) {
     return undefined as T;
@@ -58,7 +65,8 @@ export const apiClient = {
     headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
   }),
   async download(path: string): Promise<Blob> {
-    const response = await fetch(`${BASE_URL}${path}`);
+    const response = await fetch(`${BASE_URL}${path}`, { credentials: path.startsWith('/cxp/') ? 'include' : 'same-origin' });
+    if (path.startsWith('/cxp/') && response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new ApiError(body?.error ?? `Error ${response.status}`, response.status, body?.details);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Save, X } from 'lucide-react';
 import {
-  CXP_SCHEMAS, applyCxpActorFields, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
+  CXP_SCHEMAS, applyCxpActorFields, isCxpActorField, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
 } from '@erp/contracts';
 import { apiClient, ApiError } from '../api';
@@ -10,6 +10,10 @@ import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 import { CxpButton } from './CxpButton';
 import { isCxpManagementResource } from './CxpManagementUI';
+import { CxpActorReadOnly } from './CxpActorReadOnly';
+import { DocumentoMonedaControl, useDocumentoMonedas } from '../documentos/components/DocumentoMonedaControl';
+import { cambioDocumento, documentoAmountHelp, documentoClearlyInvalid, documentoFormErrors, documentoPreview } from '../documentos/documentoCaptura';
+import { initialCxpFormValues, cxpFormRecord } from './cxpFormValues';
 
 export interface CxpFormProps {
   record?: CxpRecord | null;
@@ -66,32 +70,32 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   const FormButton = management ? CxpButton : Button;
   const sectionHeading = useRef<HTMLHeadingElement>(null);
   const editing = !!record;
+  const { config: documentCurrencies, error: documentCurrencyError } = useDocumentoMonedas(resource === 'documentos');
   const paymentForm = ['pagos', 'lotes-pago', 'aplicaciones'].includes(resource);
-  const initial = useMemo(() => Object.fromEntries(entity.fields.map(field => {
-    // En creación, los campos numéricos no se precargan con su valor por defecto de BD
-    // (ej. 0.0) para que se vean vacíos con su placeholder "Ej: ..." en vez de un "0"
-    // que parece escrito por el usuario. Selects/textos (moneda, estado) sí se precargan.
-    const fallbackDefault = field.type === 'number' ? undefined : field.defaultValue;
-    let value = record ? record[field.name] : initialValues[field.name] ?? fallbackDefault ?? '';
-    if (value === 'SYSDATE') value = localDate();
-    if (value === 'SYSTIMESTAMP') value = field.readOnly ? '' : localDate(true);
-    return [field.name, value == null ? '' : String(value)];
-  })), []);
+  const initial = useMemo(() => initialCxpFormValues(resource, record, initialValues), []);
   const [values, setValues] = useState<Record<string, string>>(initial);
   const [association, setAssociation] = useState(entity.associationFields?.find(field => values[field]) ?? entity.associationFields?.[0] ?? '');
   const [section, setSection] = useState(sectionsOrder.find(name => entity.fields.some(field => field.section === name && !field.identity)) ?? sectionsOrder[0]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [documentTouched, setDocumentTouched] = useState<Record<string, boolean>>({});
+  const documentValidation = resource === 'documentos'
+    ? documentoFormErrors(values, Number(getOperadorId()), { monedas: documentCurrencies }) : {};
+  // Una moneda histórica sin cambios no se sustituye por otra al editar una observación.
+  if (editing && values.moneda === initial.moneda && documentCurrencies &&
+    !documentCurrencies.monedas.some(row => row.codigo === values.moneda)) delete documentValidation.moneda;
+  const displayedErrors = resource === 'documentos'
+    ? { ...Object.fromEntries(Object.entries(documentValidation).filter(([name]) => documentTouched[name])), ...errors } : errors;
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
-  const asRecord = (source: Record<string, string>): CxpRecord => Object.fromEntries(entity.fields.map(field => [field.name,
-    source[field.name] === '' ? null : field.type === 'number' ? Number(source[field.name]) : source[field.name],
-  ]));
+  const asRecord = (source: Record<string, string>): CxpRecord => cxpFormRecord(resource, source);
   const raw = asRecord(values);
   const feRoleParameter = resource === 'parametros' && values.grupoParametro === 'CXP_FE_APROBADOR_ROL' && values.codigo === 'ROL_APROBADOR';
   let preview = raw;
   try { preview = prepareCxpRecord(resource, { ...raw, montoAplicado: record?.montoAplicado ?? 0 }); } catch { /* La validación indica el campo inválido al guardar. */ }
+  if (resource === 'documentos') preview = { ...raw, totalBruto: undefined, totalNeto: undefined,
+    totalLocal: undefined, saldoPendiente: undefined, ...documentoPreview(values, Number(getOperadorId())) };
   const visible = entity.fields.filter(field => isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association) && !(feRoleParameter && field.name === 'valorTexto'));
   const sections = sectionsOrder.filter(name => visible.some(field => field.section === name));
   const sectionIndex = sections.indexOf(section);
@@ -104,7 +108,8 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
 
   const change = (name: string, value: string) => {
     setValues(current => {
-      const next = { ...current, [name]: value };
+      const next = resource === 'documentos' && documentCurrencies
+        ? cambioDocumento(current, name, value, documentCurrencies.monedaLocal) : { ...current, [name]: value };
       const nextRecord = asRecord(next);
       entity.fields.forEach(field => { if (!isCxpFieldVisible(resource, field.name, nextRecord)) next[field.name] = ''; });
       if (name === 'idDocumento' && resource === 'documentos-tributos') next.idDetalle = '';
@@ -112,10 +117,14 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       if (resource === 'parametros' && next.grupoParametro === 'CXP_FE_APROBADOR_ROL' && next.codigo === 'ROL_APROBADOR') next.valorTexto = '';
       return next;
     });
-    setErrors(current => ({ ...current, [name]: '' }));
+    if (resource === 'documentos') {
+      if (documentoClearlyInvalid(name, value)) setDocumentTouched(current => ({ ...current, [name]: true }));
+      setErrors({});
+    } else setErrors(current => ({ ...current, [name]: '' }));
   };
   const showErrors = (fieldErrors: Record<string, string>) => {
     setErrors(fieldErrors);
+    if (resource === 'documentos') setDocumentTouched(current => ({ ...current, ...Object.fromEntries(Object.keys(fieldErrors).map(name => [name, true])) }));
     const first = entity.fields.find(field => fieldErrors[field.name]);
     if (first) {
       if (entity.associationFields?.includes(first.name)) setAssociation(first.name);
@@ -132,6 +141,11 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     if (management && !lastSection) { goToSection(sections[sectionIndex + 1]); return; }
     setErrors({});
     setFormError(null);
+    if (resource === 'documentos') {
+      const found = { ...documentValidation };
+      if (!documentCurrencies) found.moneda = documentCurrencyError || 'Espera a que se cargue el catálogo de monedas.';
+      if (Object.keys(found).length) { showErrors(found); return; }
+    }
     if (feRoleParameter && !values.valorNumero) {
       showErrors({ valorNumero: 'Selecciona un rol activo por nombre.' });
       return;
@@ -150,10 +164,16 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       payload[field.name] = field.type === 'number' ? Number(text) : text;
     }
     if (editing && Object.keys(payload).length === 0) { onCancel(); return; }
+    if (resource === 'documentos' && editing && documentCurrencies && values.moneda !== documentCurrencies.monedaLocal &&
+      (payload.fechaDocumento !== undefined || payload.moneda !== undefined)) {
+      payload.tipoCambio = Number(values.tipoCambio);
+      payload.fechaTipoCambio = values.fechaTipoCambio || values.fechaDocumento;
+      payload.fuenteTipoCambio = values.fuenteTipoCambio || 'Ingreso manual';
+    }
     // La autoría (creado por, aplicado por, aprobador…) la registra el usuario operativo.
     const operador = Number(getOperadorId());
     if (!Number.isSafeInteger(operador) || operador <= 0) {
-      setFormError('Elige arriba con qué usuario estás operando ("Operando como") para poder guardar.');
+      setFormError('La sesión no tiene un usuario CXP activo. Vuelve a iniciar sesión.');
       return;
     }
     const authored = applyCxpActorFields(resource, operador, payload, editing ? record : null);
@@ -183,6 +203,11 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   }
 
   const renderField = (field: CxpFieldDefinition) => {
+    if (resource === 'documentos' && isCxpActorField(resource, field.name)) {
+      const actorId = field.name === 'modificadoPor' && editing && !readOnly
+        ? getOperadorId() : record?.[field.name] ?? (field.name === 'creadoPor' ? getOperadorId() : null);
+      return <CxpActorReadOnly key={field.name} id={`cxp-${field.name}`} label={field.label} actorId={actorId} />;
+    }
     const calculatedDocumentTerm = resource === 'documentos' && ['fechaVencimiento', 'diasCredito'].includes(field.name);
     const locked = readOnly || field.readOnly || busy || (resource === 'documentos' && field.name === 'estado') ||
       calculatedDocumentTerm ||
@@ -195,11 +220,23 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       value = value.slice(0, field.type === 'date' ? 10 : 23);
     }
     const props = { id: `cxp-${field.name}`, label: field.label, required: field.required && !field.readOnly,
-      error: errors[field.name], value, isReadOnly: locked,
+      error: displayedErrors[field.name], value, isReadOnly: locked,
+      'aria-invalid': !!displayedErrors[field.name] || undefined,
+      'aria-describedby': displayedErrors[field.name] ? `cxp-${field.name}-error` : undefined,
+      onBlur: () => { if (resource === 'documentos') setDocumentTouched(current => ({ ...current, [field.name]: true })); },
       className: paymentForm && !field.lookup && !field.options ? field.type === 'number' ? 'cxp-field-number' : field.type === 'date' ? 'cxp-field-date' : field.type === 'datetime' ? 'cxp-field-datetime' : 'cxp-field-text' : undefined };
     if (feRoleParameter && field.name === 'valorNumero') {
       return <RelationSelect key={field.name} {...props} label="Rol aprobador" catalog="roles" readOnly={locked} allowCreate={false}
         onChange={next => change(field.name, next)} />;
+    }
+    if (resource === 'documentos' && ['moneda', 'tipoCambio'].includes(field.name)) {
+      return <DocumentoMonedaControl key={field.name} name={field.name as 'moneda' | 'tipoCambio'}
+        id={`cxp-${field.name}`} values={values} config={documentCurrencies}
+        error={field.name === 'moneda' ? documentCurrencyError || displayedErrors.moneda : displayedErrors.tipoCambio}
+        readOnly={locked} onChange={change} onBlur={() => {
+          setDocumentTouched(current => ({ ...current, [field.name]: true }));
+          if (field.name === 'tipoCambio' && !locked && values.tipoCambio) change(field.name, values.tipoCambio);
+        }} />;
     }
     if (field.lookup) {
       let filterField: string | undefined;
@@ -215,23 +252,36 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     const choices = field.options?.filter(option => (!allowed || allowed.includes(option))
       // Las facturas especiales se registran en su propio módulo (flujo de emisión y constancia).
       && !(resource === 'documentos' && field.name === 'tipoDocumento' && option === 'FACTURA_ESPECIAL' && record?.tipoDocumento !== option));
-    if (choices) return <Select key={field.name} {...props} placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...choices.map(option => ({ value: option, label: optionLabel(option) }))]}
+    if (choices) return <Select key={field.name} {...props}
+      error={displayedErrors[field.name] ? <span id={`cxp-${field.name}-error`} role="status">{displayedErrors[field.name]}</span> : undefined}
+      placeholder="" options={[{ value: '', label: 'Seleccionar…' }, ...choices.map(option => ({ value: option, label: optionLabel(option) }))]}
       onChange={(event: React.ChangeEvent<HTMLSelectElement>) => change(field.name, event.target.value)} />;
-    if (field.type === 'textarea') return <TextArea key={field.name} {...props} rows={management ? 3 : 4} maxLength={field.maxLength ?? 30000}
+    if (field.type === 'textarea') return <TextArea key={field.name} {...props}
+      error={displayedErrors[field.name] ? <span id={`cxp-${field.name}-error`} role="status">{displayedErrors[field.name]}</span> : undefined}
+      rows={management ? 3 : 4} maxLength={field.maxLength ?? 30000}
       placeholder={placeholderFor(field)}
       className="sm:col-span-2" onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => change(field.name, event.target.value)} />;
     const futureRestricted = (field.type === 'date' || field.type === 'datetime') && isCxpFutureDateRestricted(field.name);
-    return <TextInput key={field.name} {...props} type={field.type === 'datetime' ? 'datetime-local' : field.type}
+    const documentAmount = resource === 'documentos' && !!documentoAmountHelp[field.name];
+    return <TextInput key={field.name} {...props}
+      error={displayedErrors[field.name] ? <span id={`cxp-${field.name}-error`} role="status">{displayedErrors[field.name]}</span> : undefined}
+      aria-describedby={displayedErrors[field.name] ? `cxp-${field.name}-error` : undefined}
+      type={documentAmount ? 'text' : field.type === 'datetime' ? 'datetime-local' : field.type}
       inputMode={field.type === 'number' ? field.integer ? 'numeric' : 'decimal' : undefined}
       maxLength={field.maxLength} step={field.type === 'datetime' ? '0.000001' : field.type === 'number' ? field.integer || field.scale === 0 ? '1' : field.scale ? String(10 ** -field.scale) : 'any' : undefined}
       max={futureRestricted ? localDate(field.type === 'datetime') : undefined}
       placeholder={field.identity || (field.readOnly && !field.calculated) ? 'Se genera al guardar' : placeholderFor(field)}
-      helperText={field.calculated || calculatedDocumentTerm ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : futureRestricted ? 'No puede ser una fecha futura.' : undefined}
+      helperText={documentAmount ? documentoAmountHelp[field.name] : field.calculated || calculatedDocumentTerm ? 'Se calcula automáticamente.' : field.name === 'uriAlmacenamiento' ? 'Ubicación donde ya está almacenado el archivo.' : futureRestricted ? 'No puede ser una fecha futura.' : undefined}
       onChange={(event: React.ChangeEvent<HTMLInputElement>) => change(field.name, event.target.value)} />;
   };
 
   return (
-    <form noValidate onSubmit={submit} aria-busy={busy || undefined} className={management ? 'cxp-management-form' : 'space-y-5'}>
+    <form noValidate onSubmit={submit} aria-busy={busy || undefined} className={management ? 'cxp-management-form' : 'space-y-5'}
+      onBlurCapture={event => {
+        if (resource !== 'documentos') return;
+        const name = (event.target as HTMLElement).id?.replace(/^cxp-/, '');
+        if (entity.fields.some(field => field.name === name)) setDocumentTouched(current => ({ ...current, [name]: true }));
+      }}>
       {management ? <div className="cxp-management-step">
         <div className="cxp-management-step-heading">
           <div><p className="cxp-management-eyebrow">Sección {sectionIndex + 1} de {sections.length}</p>

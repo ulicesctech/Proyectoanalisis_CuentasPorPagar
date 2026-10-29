@@ -2,7 +2,7 @@ import { assertOutsideProcess } from '../repositories/proceso-guard.repository';
 import oracledb, { type Connection } from 'oracledb';
 import { cxpEventoRepository } from '../repositories/control/evento.repository';
 import {
-  CXP_SCHEMAS, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord, cxpMoneySum,
+  CXP_SCHEMAS, documentoExchangeIssues, getCxpEntity, buildPaginationMeta, prepareCxpRecord, validateCxpRecord, cxpMoneySum,
   type CxpListQuery, type CxpRecord, type CxpResource,
 } from '@erp/contracts';
 import { createCxpRepository, withCxpTransaction, type CxpRepository } from '../repositories/crud.repository';
@@ -14,6 +14,7 @@ import { checkApprovals, checkInitialState, checkStateChange, resetApprovals } f
 import { checkFacturaEspecialGuard } from './documentos/facturaEspecial.guard';
 import { CxpError } from './errors';
 import { resolveActorFields } from './actorFields';
+import { assertDocumentoMoneda } from '../repositories/documentos/documentoMoneda.repository';
 import {
   assertCxpDocumentoCalendarDates, assertCxpDocumentoCreateState, assertCxpDocumentoCrudChange,
   assertCxpDocumentoComponentsEditable,
@@ -169,6 +170,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
     async create(raw: unknown, actorId: number) {
       validId(actorId);
       const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      if (resource === 'eventos' && typeof rawRecord.tipoEvento === 'string' && rawRecord.tipoEvento.trim() === 'CAPTURA_COMPONENTES') throw new CxpError('La trazabilidad de componentes la genera la operación controlada', 409);
       const suppliedTerms = {
         fechaVencimiento: Object.hasOwn(rawRecord, 'fechaVencimiento') ? rawRecord.fechaVencimiento : undefined,
         diasCredito: Object.hasOwn(rawRecord, 'diasCredito') ? rawRecord.diasCredito : undefined,
@@ -176,6 +178,10 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
       // La autoría la fija el usuario operativo: antes del esquema (campos obligatorios)
       // y después (estado por defecto que también registra al actor).
       const authored = resolveActorFields(resource, actorId, rawRecord as CxpRecord);
+      if (resource === 'documentos') {
+        const issues = documentoExchangeIssues(authored, true);
+        if (issues.length) throw new CxpError('Revisa el tipo de cambio', 422, issues);
+      }
       let input = checked(resource, resolveActorFields(resource, actorId, schema.create.parse(authored) as CxpRecord));
       if (resource === 'compromisos' && input.tipoCompromiso === 'FONDO_CAJA_CHICA') {
         if (Object.hasOwn(rawRecord, 'saldoCapital') && Number(input.saldoCapital) !== Number(input.montoTotal)) {
@@ -209,6 +215,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         await assertOutsideProcess(connection, resource, input);
         await checkFacturaEspecialGuard(connection, resource, null, input);
         if (resource === 'documentos') {
+          await assertDocumentoMoneda(connection, input.moneda);
           input = await snapshotDocumentoDueDate(connection, input, suppliedTerms);
           assertCxpDocumentoCalendarDates(input);
         }
@@ -245,7 +252,19 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        if (resource === 'eventos' && (current.tipoEvento === 'CAPTURA_COMPONENTES' || patch.tipoEvento === 'CAPTURA_COMPONENTES')) throw new CxpError('La trazabilidad de componentes es de solo lectura', 409);
         patch = resolveActorFields(resource, actorId, patch, current);
+        if (resource === 'documentos') {
+          const issues = documentoExchangeIssues({ ...current, ...patch }, false);
+          if (Object.hasOwn(patch, 'moneda') && patch.moneda !== current.moneda ||
+              Object.hasOwn(patch, 'fechaDocumento') && patch.fechaDocumento !== current.fechaDocumento) {
+            issues.push(...documentoExchangeIssues({ ...patch, moneda: patch.moneda ?? current.moneda }, true));
+          }
+          if (issues.length) throw new CxpError('Revisa el tipo de cambio', 422, issues);
+          if (Object.hasOwn(patch, 'moneda') || Object.hasOwn(patch, 'tipoCambio')) {
+            await assertDocumentoMoneda(connection, patch.moneda ?? current.moneda);
+          }
+        }
         await assertOutsideProcess(connection, resource, current);
         await checkFacturaEspecialGuard(connection, resource, current, patch);
         if (resource === 'aprobaciones' && (current.idDocumento != null || patch.idDocumento != null)) {
@@ -344,6 +363,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        if (resource === 'eventos' && current.tipoEvento === 'CAPTURA_COMPONENTES') throw new CxpError('La trazabilidad de componentes debe conservarse', 409);
         await assertOutsideProcess(connection, resource, current);
         await checkFacturaEspecialGuard(connection, resource, current, null);
         if (resource === 'aprobaciones' && current.idDocumento != null) {

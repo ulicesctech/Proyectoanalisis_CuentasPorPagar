@@ -22,7 +22,7 @@ export const cxpErrorHandler: ErrorRequestHandler = (error, _req, res, next) => 
   };
   const mapped = messages[Number(error?.errorNum)];
   if (mapped) {
-    console.error('[CXP]', error);
+    console.error('[CXP] Error Oracle', { errorNum: Number(error?.errorNum) });
     res.status(mapped.status).json({ error: mapped.message });
     return;
   }

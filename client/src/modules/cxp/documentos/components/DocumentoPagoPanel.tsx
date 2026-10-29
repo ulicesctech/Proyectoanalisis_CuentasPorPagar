@@ -78,8 +78,7 @@ export function DocumentoPagoPanel({ documento, onApplied }: Props) {
         {selected && <p className="text-xs text-slate-600">{readableState(selected.estado)} · Obligación {formatDocumentoMoney(selected.montoObligacion, selected.moneda)} · Disponible {formatDocumentoMoney(selected.montoNoAplicado, selected.moneda)}</p>}
       </div>
       <div className="space-y-3">
-        <DocumentoCatalogPicker id="payment-actor" label="Usuario que registra la aplicación" catalog="usuarios"
-          value={actorId} onChange={setActorId} placeholder="Seleccionar usuario…" required />
+        <p className="text-sm text-slate-700">Aplicación registrada por el usuario autenticado.</p>
         <div>
           <label htmlFor="payment-amount" className="block text-xs font-semibold text-slate-700 mb-1.5">Importe a aplicar</label>
           <input id="payment-amount" type="number" min="0.01" step="0.01" value={amount}
