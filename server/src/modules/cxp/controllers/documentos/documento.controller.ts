@@ -12,11 +12,22 @@ import type { Request, Response, NextFunction } from 'express';
 import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpActor } from '../../services/identidad';
 import { CxpError } from '../../services/errors';
+import { documentoComponentOperations } from '../../services/documentos/documento.componentes';
 
 const baseController = createCxpController(cxpDocumentoService);
 
 export const cxpDocumentoController = {
   ...baseController,
+  async components(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await documentoComponentOperations.read(Number(req.params.id))); } catch (error) { next(error); }
+  },
+  async saveComponents(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = cxpActor(res);
+      if (!actor) throw new CxpError('No hay usuario CXP activo en la sesión', 401);
+      res.json(await documentoComponentOperations.save(Number(req.params.id), req.body, actor));
+    } catch (error) { next(error); }
+  },
   async list(req: Request, res: Response, next: NextFunction) {
     if (req.query.filterField !== undefined) return baseController.list(req, res, next);
     try {

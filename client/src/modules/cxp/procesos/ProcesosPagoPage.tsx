@@ -17,7 +17,7 @@ import type {
   ProcesoPago,
 } from '@erp/contracts';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Ban, Banknote, CalendarClock, CheckCircle2, Eye, Plus, Printer, RefreshCw, Send, X, XCircle } from 'lucide-react';
 
 import { RelationSelect } from '../components/RelationSelect';
@@ -30,6 +30,8 @@ import './procesos.css';
 import { impedimentoAprobacion, impedimentoCobro, impedimentoEntrega } from './segregacion';
 import { useOperadorId } from '../operador/operador';
 import { useAuth } from '../auth/session';
+import { etapaActual, flowGuide, navegacionFlujo, rutaEtapaFlujo } from './flujoPago';
+import { ProcesoPagoFlow } from './ProcesoPagoFlow';
 
 const titles: Record<ProcesoPago['estado'], string> = {
   EMITIDA: 'Contraseña emitida',
@@ -69,97 +71,8 @@ const daysBetweenIso = (from: string, to: string) => {
   return Math.round((b - a) / 86_400_000);
 };
 
-const flowGuide = [
-  {
-    label: 'Factura',
-    hint: 'Documento recibido',
-    route: '/cxp/contrasenas',
-  },
-  {
-    label: 'Constancia',
-    hint: 'Recepción registrada',
-    route: '/cxp/contrasenas',
-  },
-  {
-    label: 'Solicitud',
-    hint: 'Preparar pago',
-    route: '/cxp/contrasenas',
-  },
-  {
-    label: 'Autorización',
-    hint: 'Aprobar o rechazar',
-    route: '/cxp/autorizaciones',
-  },
-  {
-    label: 'Programación',
-    hint: 'Programar pago',
-    route: '/cxp/pagos',
-  },
-  {
-    label: 'Ejecución',
-    hint: 'Cheque / transferencia',
-    route: '/cxp/cheques',
-  },
-  {
-    label: 'Aplicación',
-    hint: 'Aplicar a factura',
-    route: '/cxp/cheques',
-  },
-  {
-    label: 'Finalizado',
-    hint: 'Pago conciliado',
-    route: '/cxp/cheques',
-  },
-] as const;
-
 // El servidor deriva una capacidad del nombre del rol activo de cada usuario.
 type UsuarioOperativo = ActorProceso;
-
-function etapaActual(
-  proceso: ProcesoPago | null,
-  bandeja: BandejaProceso,
-): number {
-  if (proceso) {
-    switch (proceso.estado) {
-      case 'EMITIDA':
-        return 2;
-
-      case 'EN_REVISION':
-      case 'RECHAZADA':
-        return 3;
-
-      case 'APROBADA':
-        return 4;
-
-      case 'PROGRAMADA':
-        return 5;
-
-      case 'CHEQUE_EMITIDO':
-        return 6;
-
-      case 'ENTREGADO':
-      case 'COBRADO':
-        return 7;
-
-      case 'ANULADA':
-        return 2;
-    }
-  }
-
-  switch (bandeja) {
-    case 'contrasenas':
-      return 0;
-
-    case 'autorizaciones':
-      return 3;
-
-    case 'pagos':
-      return 4;
-
-    case 'cheques':
-      return 5;
-  }
-}
 
 function siguienteRuta(proceso: ProcesoPago): {
   route: string;
@@ -239,8 +152,8 @@ function nombreEtapa(proceso: ProcesoPago): string {
     case 'APROBADA':
       return 'Programación';
     case 'PROGRAMADA':
-      return 'Ejecución de pago';
     case 'CHEQUE_EMITIDO':
+      return 'Ejecución de pago';
     case 'ENTREGADO':
       return 'Aplicación';
     case 'COBRADO':
@@ -263,6 +176,8 @@ export function ProcesosPagoPage({
   bandeja?: BandejaProceso;
 }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = navegacionFlujo(bandeja, searchParams);
   const [usuarios, setUsuarios] = useState<UsuarioOperativo[]>([]);
   const [actor, setActor] = useState<UsuarioOperativo | null>(null);
 
@@ -312,12 +227,31 @@ export function ProcesosPagoPage({
   const [createOpen, setCreateOpen] = useState(false);
   const [createStep, setCreateStep] = useState(0);
   const wizardRef = useRef<HTMLFormElement>(null);
-  const [vistaResumen, setVistaResumen] = useState<VistaResumen>('activos');
+  const vistaResumen = navigation.vista;
   const [overview, setOverview] = useState<ProcesoPago[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [processSearch, setProcessSearch] = useState('');
-  const [dashboardStage, setDashboardStage] = useState('all');
-  const [dashboardStatus, setDashboardStatus] = useState('');
+  const processSearch = searchParams.get('buscar') ?? '';
+  const dashboardStage = navigation.etapa;
+  const dashboardStatus = searchParams.get('estado') ?? '';
+
+  function updateFilters(changes: Record<string, string>, replace = false) {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+      return next;
+    }, { replace });
+  }
+
+  const setProcessSearch = (value: string) => updateFilters({ buscar: value }, true);
+  const setDashboardStatus = (value: string) => updateFilters({ estado: value });
+  function setVistaResumen(value: VistaResumen) {
+    updateFilters({ vista: value, estado: '',
+      etapa: value !== vistaResumen ? '' : searchParams.get('etapa') ?? '' });
+  }
+  function setDashboardStage(value: string) {
+    if (value === 'all') updateFilters({ etapa: '', estado: '', vista: vistaResumen });
+    else navigate(rutaEtapaFlujo(Number(value)));
+  }
 
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Guatemala',
@@ -636,7 +570,7 @@ export function ProcesosPagoPage({
     );
 
     setSelected(null);
-  }, [bandeja]);
+  }, [bandeja, dashboardStage, vistaResumen]);
 
 
   useEffect(() => {
@@ -890,8 +824,6 @@ export function ProcesosPagoPage({
     window.requestAnimationFrame(() => window.print());
   }
 
-  const bandejaStep = etapaActual(null, bandeja);
-
   const nextStage =
     selected
       ? siguienteRuta(selected)
@@ -939,6 +871,7 @@ export function ProcesosPagoPage({
 
     const matchesStage =
       dashboardStage === 'all' ||
+      Number(dashboardStage) < 2 ||
       String(indiceEtapaProceso(process)) === dashboardStage;
 
     const matchesStatus =
@@ -959,10 +892,8 @@ export function ProcesosPagoPage({
     overview.filter(process => process.estado === 'EMITIDA').length,
     overview.filter(process => process.estado === 'EN_REVISION').length,
     overview.filter(process => process.estado === 'APROBADA').length,
-    overview.filter(process => process.estado === 'PROGRAMADA').length,
-    overview.filter(process =>
-      ['CHEQUE_EMITIDO', 'ENTREGADO'].includes(process.estado),
-    ).length,
+    overview.filter(process => ['PROGRAMADA', 'CHEQUE_EMITIDO'].includes(process.estado)).length,
+    overview.filter(process => process.estado === 'ENTREGADO').length,
     overview.filter(process => process.estado === 'COBRADO').length,
   ];
 
@@ -1422,58 +1353,11 @@ export function ProcesosPagoPage({
 
               <details className="cxp-workspace-flow" open>
                 <summary>
-                  <span>Etapas del proceso</span>
-                  <small>Consultá el flujo y navegá entre sus bandejas</small>
+                  <span>Bandejas del flujo</span>
+                  <small>Navegá y filtrá por etapa; abrí un pago para ver su avance</small>
                 </summary>
-              <div className="overflow-x-auto pb-2">
-                <div className="cxp-flow-grid relative grid grid-cols-8 gap-0">
-                  <div
-                    aria-hidden="true"
-                    className="cxp-flow-line absolute left-[6%] right-[6%] top-[18px] h-0.5 bg-slate-200"
-                  />
-
-                  {flowGuide.map((step, index) => {
-                    const routeIsCurrent = index === bandejaStep;
-
-                    return (
-                      <button
-                        type="button"
-                        key={`${step.label}-${index}`}
-                        onClick={() => navigate(step.route)}
-                        className="cxp-flow-tile relative z-10 flex flex-col items-center px-2 text-center"
-                      >
-                        <span
-                          className={[
-                            'grid h-9 w-9 place-items-center rounded-full border-2 bg-white text-xs font-bold transition',
-                            routeIsCurrent
-                              ? 'border-blue-500 bg-blue-50 text-blue-700 ring-4 ring-blue-50'
-                              : 'border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600',
-                          ].join(' ')}
-                        >
-                          {index + 1}
-                        </span>
-
-                        <strong
-                          className={[
-                            'mt-2 text-xs',
-                            routeIsCurrent ? 'text-blue-700' : 'text-slate-700',
-                          ].join(' ')}
-                        >
-                          {step.label}
-                        </strong>
-
-                        <small className="mt-0.5 text-[11px] text-slate-400">
-                          {step.hint}
-                        </small>
-
-                        <span className="mt-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                          {flowCounts[index]} {index === 0 ? 'docs' : 'reg.'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                <ProcesoPagoFlow proceso={null} bandeja={bandeja} counts={flowCounts}
+                  indiceNavegacion={navigation.indice} onNavigate={route => navigate(route)} />
               </details>
 
               <div className="cxp-workspace-views" aria-label="Vista de solicitudes">
@@ -1512,7 +1396,7 @@ export function ProcesosPagoPage({
                   <Button icon={RefreshCw} variant="secondary" disabled={busy || overviewLoading}
                     onClick={() => run(async () => { await refresh(1); await refreshOverview(); })}>Actualizar</Button>
                   {(processSearch || dashboardStatus || dashboardStage !== 'all') &&
-                    <Button variant="ghost" onClick={() => { setProcessSearch(''); setDashboardStatus(''); setDashboardStage('all'); }}>Limpiar filtros</Button>}
+                    <Button variant="ghost" onClick={() => updateFilters({ buscar: '', estado: '', etapa: '', vista: vistaResumen })}>Limpiar filtros</Button>}
                 </div>
               </div>
 
@@ -1639,6 +1523,10 @@ export function ProcesosPagoPage({
                     </div>
                   </header>
                   <div className="cxp-dialog-body space-y-5">
+                <section aria-label="Etapas del pago seleccionado">
+                  <h3 className="mb-4 text-sm font-semibold text-slate-700">Avance de {selected.codigo}</h3>
+                  <ProcesoPagoFlow proceso={selected} bandeja={bandeja} />
+                </section>
                 <p className="text-sm text-slate-600">
 
                   Siguiente paso:{' '}

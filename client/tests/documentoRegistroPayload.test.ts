@@ -35,7 +35,8 @@ test('el registro no declara el plazo predeterminado del contrato al cambiar una
     assert.equal(Object.hasOwn(payload, 'fechaVencimiento'), false);
     assert.equal(payload.idCondicionCredito, idCondicionCredito);
     const saved = await snapshotDocumentoDueDate(connection,
-      CXP_SCHEMAS.documentos.create.parse(payload) as CxpRecord,
+      // La API incorpora al actor de sesión antes de validar el contrato.
+      CXP_SCHEMAS.documentos.create.parse({ ...payload, creadoPor: 4 }) as CxpRecord,
       { diasCredito: Object.hasOwn(payload, 'diasCredito') ? payload.diasCredito : undefined });
     assert.equal(saved.diasCredito, diasCredito);
     assert.equal(saved.fechaVencimiento, fechaVencimiento);

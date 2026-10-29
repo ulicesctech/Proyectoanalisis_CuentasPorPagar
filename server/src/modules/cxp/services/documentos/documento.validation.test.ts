@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { once } from 'node:events';
+import express from 'express';
 import type { Connection } from 'oracledb';
 import { cxpDocumentoRepository, findDocumentoDuplicate } from '../../repositories/documentos/documento.repository';
 import { createCxpService } from '../crud.service';
 import { createDocumentoValidationOperation } from './documento.service';
 import { assertCxpDocumentoCalendarDates } from './documento.policy';
 import type { DteStorage } from './dte.storage';
+import { requireCxpSession } from '../../../auth/routes';
+import { createCxpController } from '../../controllers/crud.controller';
+import { cxpErrorHandler } from '../../controllers/errorHandler';
 
 type Row = Record<string, string | number | null>;
 const dteContent = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
@@ -45,13 +50,14 @@ const taxTribute = (): Row => ({
   ESTADO: 'CALCULADO',
 });
 
-function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; conditions?: Row[];
+function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; conditions?: Row[]; currencies?: string[];
   files?: Row[]; fileContent?: Buffer | null; uniqueError?: string; updateError?: boolean } = {}) {
   let rows = (options.rows ?? []).map(row => ({ ...row }));
   const writes: string[] = [];
   const queries: string[] = [];
   const connection = {
     async execute(sql: string, binds: Record<string, unknown> = {}) {
+      if (sql.includes('FROM MONEDA')) return { rows: (options.currencies ?? ['GTQ']).includes(String(binds.currency)) ? [{ PRESENTE: 1 }] : [] };
       if (sql.includes("P.CODIGO_PAGO LIKE 'CP-%'")) return { rows: [] };
       if (sql.includes('FROM CXC_CONDICIONES_CREDITO')) {
         const conditions = options.conditions ?? [{ ID_CONDICION: 41, DIAS_CREDITO: 0, ESTADO: 'A' }];
@@ -96,7 +102,7 @@ function memory(options: { rows?: Row[]; lines?: Row[]; tributes?: Row[]; condit
       if (sql.startsWith('UPDATE CXP_DOCUMENTO SET')) {
         if (options.updateError) throw new Error('Fallo durante UPDATE');
         const row = rows.find(item => item.ID_DOCUMENTO === binds.id)!;
-        for (const match of sql.matchAll(/([A-Z_]+) = :v(\d+)/g)) row[match[1]] = (binds[`v${match[2]}`] as { val: string | number | null }).val;
+        for (const match of sql.matchAll(/([A-Z_]+) = (?:TO_DATE\(|TO_TIMESTAMP\()?:v(\d+)/g)) row[match[1]] = (binds[`v${match[2]}`] as { val: string | number | null }).val;
         writes.push('UPDATE');
         return { rowsAffected: 1 };
       }
@@ -126,6 +132,91 @@ const registration = {
   uuidFiscal: 'uuid-1', hashOrigen: 'hash-1', fechaDocumento: '2026-09-01',
   subtotal: 100, creadoPor: 4,
 };
+
+test('API alta y edición: toma la sesión, conserva autor original y rechaza cambiarlo sin escribir', async () => {
+  const db = memory();
+  const app = express();
+  app.use(express.json(), (_req, res, next) => {
+    res.locals.authSession = { mustChangePassword: false, actor: { id: 7, roles: [1], permisos: ['CREAR'] } };
+    next();
+  }, requireCxpSession);
+  const controller = createCxpController(createCxpService(cxpDocumentoRepository, db.run));
+  app.post('/documentos', controller.create);
+  app.patch('/documentos/:id', controller.update);
+  app.use(cxpErrorHandler);
+  const http = app.listen(0, '127.0.0.1');
+  await once(http, 'listening');
+  try {
+    const address = http.address(); assert.ok(address && typeof address !== 'string');
+    const url = `http://127.0.0.1:${address.port}/documentos`;
+    const { creadoPor: _omitted, ...input } = registration;
+    const create = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    assert.equal(create.status, 201);
+    assert.equal(db.rows[0].CREADO_POR, 7);
+    // Simula un documento que fue registrado por otra persona antes de esta edición.
+    db.rows[0].CREADO_POR = 4;
+    const edit = await fetch(`${url}/1`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ observaciones: 'Edición' }) });
+    assert.equal(edit.status, 200);
+    assert.equal(db.rows[0].CREADO_POR, 4); assert.equal(db.rows[0].MODIFICADO_POR, 7);
+    const before = structuredClone(db.rows);
+    const spoof = await fetch(`${url}/1`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ creadoPor: 99 }) });
+    assert.equal(spoof.status, 403); assert.deepEqual(db.rows, before);
+  } finally { await new Promise<void>(resolve => http.close(() => resolve())); }
+});
+
+test('moneda extranjera exige tasa explícita y activa; la local solo acepta 1', async () => {
+  for (const input of [
+    { moneda: 'USD' }, { moneda: 'USD', tipoCambio: 0 },
+    { moneda: 'USD', tipoCambio: -1 }, { moneda: 'GTQ', tipoCambio: 2 },
+  ]) {
+    const db = memory({ currencies: ['GTQ', 'USD'] });
+    await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, ...input }, 4));
+    assert.deepEqual(db.writes, []);
+  }
+  const inactive = memory();
+  await assert.rejects(createCxpService(cxpDocumentoRepository, inactive.run).create({
+    ...registration, moneda: 'USD', tipoCambio: 7.5,
+  }, 4), { status: 422 });
+  assert.deepEqual(inactive.writes, []);
+  const active = memory({ currencies: ['GTQ', 'USD'] });
+  const saved = await createCxpService(cxpDocumentoRepository, active.run).create({
+    ...registration, moneda: 'USD', tipoCambio: 7.5, diferenciaRedondeo: -0.01,
+  }, 4);
+  assert.equal(saved.totalNeto, 99.99);
+  assert.equal(saved.totalLocal, 749.93);
+});
+
+test('el servidor rechaza importes negativos, tasas vacías y precisión inválida antes de escribir', async () => {
+  const invalid = [
+    ...['subtotal', 'descuentoTotal', 'impuestoTotal', 'retencionTotal', 'recargoTotal', 'gastoAdicionalTotal']
+      .map(field => ({ [field]: -1 })),
+    { moneda: 'USD', tipoCambio: '' }, { moneda: 'USD', tipoCambio: null },
+    { moneda: 'USD', tipoCambio: 7.123456789 }, { subtotal: 100.001 },
+    { descuentoTotal: 200 }, { retencionTotal: 200 },
+    { fechaDocumento: '2026-02-30' },
+  ];
+  for (const patch of invalid) {
+    const db = memory({ currencies: ['GTQ', 'USD'] });
+    await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, ...patch }, 4));
+    assert.deepEqual(db.writes, [], JSON.stringify(patch));
+  }
+});
+
+test('editar moneda o fecha extranjera exige tasa explícita y recalcula sin cambiar el autor', async () => {
+  const db = memory({ rows: [{ ...baseDocument(), CREADO_POR: 4 }], currencies: ['GTQ', 'USD'] });
+  const service = createCxpService(cxpDocumentoRepository, db.run);
+  await assert.rejects(service.update(1, { moneda: 'USD' }, 7), { status: 422 });
+  assert.deepEqual(db.writes, []);
+  const foreign = await service.update(1, { moneda: 'USD', tipoCambio: 7.5 }, 7);
+  assert.equal(foreign.totalLocal, 750); assert.equal(foreign.creadoPor, 4);
+  const before = structuredClone(db.rows);
+  await assert.rejects(service.update(1, { fechaDocumento: '2026-09-02' }, 7), { status: 422 });
+  assert.deepEqual(db.rows, before);
+  const dated = await service.update(1, { fechaDocumento: '2026-09-02', tipoCambio: 7.6 }, 7);
+  assert.equal(dated.totalLocal, 760); assert.equal(dated.fechaVencimiento, '2026-09-02');
+  const local = await service.update(1, { moneda: 'GTQ', tipoCambio: 1 }, 7);
+  assert.equal(local.totalLocal, 100); assert.equal(local.creadoPor, 4); assert.equal(local.modificadoPor, 7);
+});
 
 test('el CRUD rechaza duplicados exactos por UUID, hash y combinación sin insertar', async () => {
   for (const change of [{}, { uuidFiscal: 'nuevo' }, { uuidFiscal: 'nuevo', hashOrigen: 'nuevo' }]) {

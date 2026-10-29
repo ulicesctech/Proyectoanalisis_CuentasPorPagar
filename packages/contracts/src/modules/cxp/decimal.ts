@@ -42,6 +42,12 @@ export function cxpMoneyMultiply(a: number, b: number): number {
   return cxpFromScaled(scale > 2 ? divideRound(product, 10n ** BigInt(scale - 2)) : product * 10n ** BigInt(2 - scale));
 }
 
+/** ROUND(base * porcentaje / 100, 2), sin dividir el porcentaje en coma flotante. */
+export function cxpMoneyPercent(base: number, percentage: number): number {
+  const left = parts(base), right = parts(percentage);
+  return cxpFromScaled(divideRound(left.coefficient * right.coefficient, 10n ** BigInt(left.scale + right.scale)));
+}
+
 export function cxpDecimalFits(value: number, precision?: number, scale?: number): boolean {
   if (!Number.isFinite(value)) return false;
   const decimal = parts(value);
