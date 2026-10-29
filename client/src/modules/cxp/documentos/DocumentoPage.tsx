@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search } from 'lucide-react';
 import { getCxpEntity, type CxpDocumento, type PaginatedResponse, type PaginationMeta } from '@erp/contracts';
-import { apiClient, ApiError, buildQueryString } from '../../../shared/api';
+import { apiClient, ApiError, buildQueryString } from '../api';
 import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { CxpBreadcrumb } from '../components/CxpBreadcrumb';

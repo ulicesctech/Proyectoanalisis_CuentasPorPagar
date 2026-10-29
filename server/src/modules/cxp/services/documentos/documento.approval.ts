@@ -102,15 +102,18 @@ export function buildDocumentoApprovalContext(
         : 'El documento no está pendiente de aprobación.';
   }
   const blocker = actorRequested ? actorBlocker(documento, actor) : null;
-  const available = !impedimento && !blocker && actor ? incomplete.filter(item =>
-    item.nivel === nivelActual && item.idRolAprobador === actor.idRol && !approvedUsers(decisions, item.idRegla).has(actor.idUsuario)
-  ) : [];
+  // Conserva la coincidencia de rol de Develop y exige personas distintas por decisión.
+  const yaDecidio = actor != null && decisions.some(item =>
+    ['APROBADA', 'RECHAZADA'].includes(item.estado) && Number(item.idUsuarioAprobador) === actor.idUsuario);
+  const available = !impedimento && !blocker && actor && !yaDecidio
+    ? incomplete.filter(item => item.nivel === nivelActual && item.idRolAprobador === actor.idRol) : [];
   let actorImpediment = blocker;
   if (actorRequested && !actorImpediment && !impedimento && actor && !available.length) {
-    const actorRules = incomplete.filter(item => item.nivel === nivelActual && item.idRolAprobador === actor.idRol);
-    actorImpediment = actorRules.length
-      ? 'Este usuario ya registró su decisión para las reglas disponibles.'
-      : 'El rol del usuario no corresponde al nivel de aprobación actual.';
+    actorImpediment = yaDecidio
+      ? 'Este usuario ya registró una decisión en este documento; debe resolverla otra persona.'
+      : incomplete.some(item => item.nivel === nivelActual && item.idRolAprobador === actor.idRol)
+        ? 'No hay reglas pendientes en el nivel de aprobación actual.'
+        : 'El rol del usuario no corresponde al nivel de aprobación actual.';
   }
   return {
     estadoDocumento,

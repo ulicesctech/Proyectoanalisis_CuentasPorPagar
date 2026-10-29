@@ -27,6 +27,7 @@ const actors: Record<number, Row> = {
   21: { USU_ID_USUARIO: 21, USU_NOMBRE_COMPLETO: 'Aprobador dos', USU_ID_ROL: 2, USU_ACTIVO: 1, ROL_ACTIVO: 1 },
   30: { USU_ID_USUARIO: 30, USU_NOMBRE_COMPLETO: 'Otro rol', USU_ID_ROL: 3, USU_ACTIVO: 1, ROL_ACTIVO: 1 },
   31: { USU_ID_USUARIO: 31, USU_NOMBRE_COMPLETO: 'Usuario inactivo', USU_ID_ROL: 2, USU_ACTIVO: 0, ROL_ACTIVO: 1 },
+  32: { USU_ID_USUARIO: 32, USU_NOMBRE_COMPLETO: 'Rol inactivo', USU_ID_ROL: 2, USU_ACTIVO: 1, ROL_ACTIVO: 0 },
 };
 
 function memory(options: { rules?: Row[]; approvals?: Row[]; failEvent?: boolean } = {}) {
@@ -142,8 +143,25 @@ test('un rechazo exige motivo, registra al actor y cambia el documento a RECHAZA
   assert.equal(db.approvals[0].ESTADO, 'RECHAZADA');
 });
 
-test('rol incorrecto, usuario inactivo y autoaprobación se rechazan sin escrituras', async () => {
-  for (const actor of [30, 31, 10]) {
+test('el ID de rol debe coincidir con la regla antes de escribir', async () => {
+  const db = memory();
+  await assert.rejects(approve(createDocumentoApprovalOperation(db.run), 30), { status: 403 });
+  assert.deepEqual(db.writes, []);
+});
+
+test('un mismo usuario no resuelve dos reglas del mismo documento', async () => {
+  const db = memory({ rules: [ruleRow(), { ...ruleRow(), ID_REGLA: 2, NOMBRE_REGLA: 'Otra regla' }] });
+  const service = createDocumentoApprovalOperation(db.run);
+  await approve(service, 20, 1);
+  assert.equal(db.document.ESTADO, 'PENDIENTE_APROBACION');
+  await assert.rejects(approve(service, 20, 2), { status: 403 });
+  assert.equal(db.approvals.length, 1);
+  await approve(service, 21, 2);
+  assert.equal(db.document.ESTADO, 'APROBADA');
+});
+
+test('usuario inactivo, rol inactivo y autoaprobación se rechazan sin escrituras', async () => {
+  for (const actor of [31, 32, 10]) {
     const db = memory();
     await assert.rejects(approve(createDocumentoApprovalOperation(db.run), actor), { status: 403 });
     assert.deepEqual(db.writes, []);
@@ -187,6 +205,6 @@ test('el CRUD genérico no crea aprobaciones de documentos', async () => {
   await assert.rejects(createCxpService(cxpAprobacionRepository, db.run).create({
     idDocumento: 1, nivel: 1, idRolAprobador: 2, estado: 'APROBADA',
     idUsuarioAprobador: 20, fechaDecision: '2026-10-03T10:00:00',
-  }), { status: 409 });
+  }, 20), { status: 409 });
   assert.deepEqual(db.writes, []);
 });

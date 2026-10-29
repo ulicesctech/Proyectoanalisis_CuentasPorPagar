@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { cxpStringQuery } from '../crud.controller';
+import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpReglaTributariaService } from '../../services/documentos/reglaTributaria.service';
 
 export const cxpReglaTributariaController = {
@@ -11,15 +12,15 @@ export const cxpReglaTributariaController = {
     } catch (error) { next(error); }
   },
   async create(req: Request, res: Response, next: NextFunction) {
-    try { res.status(201).json(await cxpReglaTributariaService.create(req.body)); }
+    try { res.status(201).json(await cxpReglaTributariaService.create(withActorField(req.body, 'creadaPor', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   async nuevaVersion(req: Request, res: Response, next: NextFunction) {
-    try { res.status(201).json(await cxpReglaTributariaService.nuevaVersion(Number(req.params.id), req.body)); }
+    try { res.status(201).json(await cxpReglaTributariaService.nuevaVersion(Number(req.params.id), withActorField(req.body, 'usuario', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   async finalizar(req: Request, res: Response, next: NextFunction) {
-    try { res.json(await cxpReglaTributariaService.finalizar(Number(req.params.id), req.body)); }
+    try { res.json(await cxpReglaTributariaService.finalizar(Number(req.params.id), withActorField(req.body, 'usuario', requireActorId(res)))); }
     catch (error) { next(error); }
   },
 };

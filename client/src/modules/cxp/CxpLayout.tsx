@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CXP_ENTITIES, getCxpEntity, type BandejaProceso, type CxpResource } from '@erp/contracts';
 import { Select, Sidebar } from '../../shared/ui-kit';
 import { CxpTopBar } from './components/CxpTopBar';
+import { useOperador } from './operador/operador';
 import './cxp.css';
 const SHOW_SECTION_NAVIGATION = false;
 
@@ -35,6 +36,11 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
   searchQuery?: string; onSearchChange?: (value: string) => void;
 }) {
   const navigate = useNavigate();
+  const { actor } = useOperador();
+  // El Sidebar es de solo lectura (components/ui): solo muestra con qué usuario se opera.
+  const sidebarUser = actor
+    ? { name: actor.nombre, role: 'Usuario operativo', initials: actor.nombre.split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || 'CP' }
+    : { name: 'Sin usuario operativo', role: 'Elige "Operando como"', initials: 'CP' };
   const active = bandeja ?? resource ?? screen;
   const group = resource ? getCxpEntity(resource)!.group : screen ? CXP_SCREENS.find(item => item.path === screen)!.group : undefined;
   const navigation = !group || HOME_GROUPS.includes(group) ? [] : group === 'Pagos'
@@ -47,7 +53,7 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
     ]
     : screens.filter(item => item.group === group);
   return <div className={`cxp-shell ${group === 'Pagos' ? 'cxp-payments-shell' : ''} flex h-screen w-screen overflow-hidden bg-slate-50`}>
-    <Sidebar activeModule="cuentas_pagar" user={{ name: 'Equipo Cuentas por Pagar', role: 'ERP universitario', initials: 'CP' }}
+    <Sidebar activeModule="cuentas_pagar" user={sidebarUser}
       onSelectModule={(module: string) => navigate(module === 'cuentas_pagar' ? '/cxp' : module === 'cuentas_cobrar' ? '/cxc/organizacion/empresas' : '/')} />
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} />

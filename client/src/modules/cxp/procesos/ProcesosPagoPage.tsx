@@ -27,6 +27,8 @@ import { CxpLayout } from '../CxpLayout';
 import { CxpButton as Button } from '../components/CxpButton';
 
 import './procesos.css';
+import { impedimentoAprobacion, impedimentoCobro, impedimentoEntrega } from './segregacion';
+import { useOperadorId } from '../operador/operador';
 
 const titles: Record<ProcesoPago['estado'], string> = {
   EMITIDA: 'Contraseña emitida',
@@ -109,9 +111,8 @@ const flowGuide = [
   },
 ] as const;
 
-type UsuarioOperativo = ActorProceso & {
-  rolNombre: string;
-};
+// El servidor deriva una capacidad del nombre del rol activo de cada usuario.
+type UsuarioOperativo = ActorProceso;
 
 function etapaActual(
   proceso: ProcesoPago | null,
@@ -264,9 +265,8 @@ export function ProcesosPagoPage({
   const [usuarios, setUsuarios] = useState<UsuarioOperativo[]>([]);
   const [actor, setActor] = useState<UsuarioOperativo | null>(null);
 
-  const [actorId, setActorId] = useState(
-    () => localStorage.getItem('cxp.actorId') ?? '',
-  );
+  // Usuario operativo compartido con la barra superior de CXP ("Operando como").
+  const [actorId, setActorId] = useOperadorId();
 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -461,8 +461,6 @@ export function ProcesosPagoPage({
         e instanceof ApiError &&
         e.status === 401
       ) {
-        localStorage.removeItem('cxp.actorId');
-
         setActorId('');
         setActor(null);
         setSelected(null);
@@ -566,14 +564,16 @@ export function ProcesosPagoPage({
         '/cxp/procesos/usuarios-operativos',
       );
 
-    setUsuarios(rows);
+    // Develop requería un rol activo para entrar al proceso de pagos.
+    const elegibles = rows.filter(usuario => usuario.roles.length > 0);
+    setUsuarios(elegibles);
 
-    if (!rows.length) {
+    if (!elegibles.length) {
       setActor(null);
       return;
     }
 
-    const guardado = rows.find(
+    const guardado = elegibles.find(
       usuario =>
         String(usuario.id) === actorId,
     );
@@ -583,39 +583,26 @@ export function ProcesosPagoPage({
 
   function cambiarActor(id: string) {
     setActorId(id);
+  }
 
+  // Cambiar de usuario (aquí o en la barra superior) limpia lo que dependía del anterior.
+  const actorAnterior = useRef(actorId);
+  useEffect(() => {
+    setActor(usuarios.find(item => String(item.id) === actorId) ?? null);
+    if (actorAnterior.current === actorId) return;
+    actorAnterior.current = actorId;
     setSelected(null);
     setChosen([]);
     setReason('');
     setReceiver('');
     setPaymentMethod('');
     setOverview([]);
-
     setList({
       data: [],
       page: 1,
       hasMore: false,
     });
-
-    if (!id) {
-      localStorage.removeItem('cxp.actorId');
-      setActor(null);
-      return;
-    }
-
-    localStorage.setItem(
-      'cxp.actorId',
-      id,
-    );
-
-    const usuario =
-      usuarios.find(
-        item =>
-          String(item.id) === id,
-      ) ?? null;
-
-    setActor(usuario);
-  }
+  }, [actorId, usuarios]);
 
   useEffect(() => {
     void run(cargarUsuarios, {
@@ -880,10 +867,7 @@ export function ProcesosPagoPage({
   const can = (
     permission:
       ActorProceso['permisos'][number],
-  ) =>
-    actor?.permisos.includes(
-      permission,
-    ) ?? false;
+  ) => (actor?.roles.length ?? 0) > 0 && (actor?.permisos.includes(permission) ?? false);
 
   const input = (
     label: string,
@@ -1960,6 +1944,11 @@ export function ProcesosPagoPage({
                               can(
                                 'APROBAR',
                               ) && (
+                                impedimentoAprobacion(selected, approval, actor) ? (
+                                  <span className="text-sm text-slate-500">
+                                    {impedimentoAprobacion(selected, approval, actor)}
+                                  </span>
+                                ) : (
                                 <>
 
                                   <Button
@@ -2011,6 +2000,7 @@ export function ProcesosPagoPage({
                                   </Button>
 
                                 </>
+                                )
                               )}
 
                           </div>
@@ -2066,19 +2056,27 @@ export function ProcesosPagoPage({
                     )}
 
                     {bandeja === 'cheques' && selected.estado === 'CHEQUE_EMITIDO' && can('TESORERIA') && (
-                      <Button icon={CheckCircle2} size="md" variant="primary"
-                        disabled={busy || executionTooEarly || (processIsCheque && receiver.trim().length < 3)}
-                        onClick={() => act({ accion: 'entregar', version: selected.version,
-                          ...(processIsCheque ? { receptor: receiver } : {}) })}>
-                        {processIsCheque ? 'Entregar y aplicar pago' : 'Ejecutar y aplicar pago'}
-                      </Button>
+                      impedimentoEntrega(selected, actor) ? (
+                        <span className="text-sm text-slate-500">{impedimentoEntrega(selected, actor)}</span>
+                      ) : (
+                        <Button icon={CheckCircle2} size="md" variant="primary"
+                          disabled={busy || executionTooEarly || (processIsCheque && receiver.trim().length < 3)}
+                          onClick={() => act({ accion: 'entregar', version: selected.version,
+                            ...(processIsCheque ? { receptor: receiver } : {}) })}>
+                          {processIsCheque ? 'Entregar y aplicar pago' : 'Ejecutar y aplicar pago'}
+                        </Button>
+                      )
                     )}
 
                     {bandeja === 'cheques' && selected.estado === 'ENTREGADO' && can('TESORERIA') && (
-                      <Button icon={CheckCircle2} size="md" variant="success" disabled={busy}
-                        onClick={() => act({ accion: 'cobrar', version: selected.version })}>
-                        {processIsCheque ? 'Confirmar cobro' : 'Confirmar transferencia'}
-                      </Button>
+                      impedimentoCobro(selected, actor) ? (
+                        <span className="text-sm text-slate-500">{impedimentoCobro(selected, actor)}</span>
+                      ) : (
+                        <Button icon={CheckCircle2} size="md" variant="success" disabled={busy}
+                          onClick={() => act({ accion: 'cobrar', version: selected.version })}>
+                          {processIsCheque ? 'Confirmar cobro' : 'Confirmar transferencia'}
+                        </Button>
+                      )
                     )}
 
                     {bandeja === 'cheques' && selected.cheque && selected.estado !== 'ANULADA' && can('TESORERIA') && (

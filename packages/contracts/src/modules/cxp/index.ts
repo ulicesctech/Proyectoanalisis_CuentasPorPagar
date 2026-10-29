@@ -6,6 +6,7 @@ export * from './rules';
 export * from './decimal';
 export * from './time';
 export * from './transitions';
+export * from './actor-fields';
 export * from './factura-especial';
 export * from './parametro';
 export * from './periodo';

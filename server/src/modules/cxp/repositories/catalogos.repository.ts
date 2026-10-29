@@ -37,11 +37,14 @@ export async function listCxpOptions(catalog: string, query: { search?: string; 
   try {
     const descriptiveColumns = await labelColumns(connection, catalog);
     const key = definition.numeric ? `TO_CHAR(${definition.key})` : definition.key;
-    const label = catalog === 'condiciones-credito'
+    const label = catalog === 'roles'
+      ? `TRIM(ROL_NOMBRE_ROL) || ' · Rol #' || ${key}`
+      : catalog === 'condiciones-credito'
       ? `CASE WHEN DIAS_CREDITO = 0 THEN 'Contado' ELSE TO_CHAR(DIAS_CREDITO) || ' días de crédito' END || ' · Condición #' || ${key}`
       : `'${definition.label.replace(/'/g, "''")} #' || ${key}` + descriptiveColumns.map(column => ` || CASE WHEN ${column} IS NOT NULL THEN ' · ' || ${column} END`).join('');
     const binds: BindParameters = {};
-    const clauses: string[] = catalog === 'condiciones-credito' ? ["ESTADO = 'A'"] : [];
+    const clauses: string[] = catalog === 'condiciones-credito' ? ["ESTADO = 'A'"]
+      : catalog === 'roles' ? ['ROL_ACTIVO = 1', 'TRIM(ROL_NOMBRE_ROL) IS NOT NULL'] : [];
     if (query.search) {
       clauses.push(`UPPER(${label}) LIKE UPPER(:search)`);
       binds.search = `%${query.search.slice(0, 150)}%`;

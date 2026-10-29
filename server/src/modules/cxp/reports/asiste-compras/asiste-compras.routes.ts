@@ -5,6 +5,7 @@ import { generarAsisteComprasPdf } from './asiste-compras.pdf';
 import { getConnection } from '../../../../config/database';
 import { cxpEventoRepository } from '../../repositories/control/evento.repository';
 import { findApprovalActor } from '../../repositories/documentos/documentoApproval.repository';
+import { actorForField, requireActorId } from '../../services/actorFields';
 
 const router = Router();
 
@@ -143,7 +144,7 @@ router.get('/asiste-compras/exportar', async (req, res) => {
       fechaInicio,
       fechaFin,
       'XLSX',
-      Number(req.query.usuarioEvento),
+      actorForField(req.query.usuarioEvento, requireActorId(res), 'usuarioEvento'),
     );
 
     const fechaArchivo = fechaInicio.replace(/-/g, '');
@@ -217,7 +218,7 @@ router.get('/asiste-compras/exportar-pdf', async (req, res) => {
       fechaInicio,
       fechaFin,
       'PDF',
-      Number(req.query.usuarioEvento),
+      actorForField(req.query.usuarioEvento, requireActorId(res), 'usuarioEvento'),
     );
 
     const fechaArchivo = fechaInicio.replace(/-/g, '');

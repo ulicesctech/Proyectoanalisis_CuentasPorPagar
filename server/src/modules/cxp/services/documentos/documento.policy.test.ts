@@ -63,7 +63,7 @@ test('el CRUD rechaza la creación aprobada antes de abrir una conexión', async
   assert.throws(() => assertCxpDocumentoCreateState({ estado: 'APROBADA' }), { status: 409 });
   await assert.rejects(cxpDocumentoService.create({
     idSucursal: 1, tipoDocumento: 'FACTURA', creadoPor: 1, subtotal: 100, estado: 'APROBADA',
-  }), { status: 409 });
+  }, 1), { status: 409 });
 });
 
 test('el CRUD no convierte un documento recibido en validado o aprobado por PATCH', () => {

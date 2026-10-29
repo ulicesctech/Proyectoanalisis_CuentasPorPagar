@@ -104,7 +104,8 @@ export async function findApprovalActor(connection: Connection, idUsuario: numbe
   return row ? {
     idUsuario: Number(row.USU_ID_USUARIO), nombre: row.USU_NOMBRE_COMPLETO == null ? null : String(row.USU_NOMBRE_COMPLETO),
     idRol: row.USU_ID_ROL == null ? null : Number(row.USU_ID_ROL),
-    usuarioActivo: Number(row.USU_ACTIVO) === 1, rolActivo: Number(row.ROL_ACTIVO) === 1,
+    usuarioActivo: Number(row.USU_ACTIVO) === 1,
+    rolActivo: Number(row.ROL_ACTIVO) === 1,
   } : null;
 }
 

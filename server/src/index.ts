@@ -10,8 +10,15 @@ import { config } from './config';
 
 const app = express();
 const PORT = config.port;
+const HOST = config.host;
 
-app.use(cors());
+// Solo los orígenes configurados (CORS_ORIGINS). CORS no impide llamadas fuera del
+// navegador: la identidad de CXP sigue siendo provisional hasta tener inicio de sesión.
+app.use(cors({
+  origin: config.corsOrigins,
+  allowedHeaders: ['Content-Type', 'X-CXP-Actor-Id', 'X-File-Name'],
+  exposedHeaders: ['Content-Disposition'],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -37,10 +44,12 @@ async function bootstrap() {
   try {
     await initOraclePool();
 
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, HOST, () => {
       console.log(
-        `[ERP Server]: API base corriendo en http://localhost:${PORT}`,
+        `[ERP Server]: API base corriendo en http://${HOST}:${PORT}`,
       );
+      console.log(`[ERP Server]: CORS permitido para ${config.corsOrigins.join(', ')}`);
+      console.log(`[ERP Server]: identidad CXP en modo ${config.cxpAuthMode} (no autentica usuarios)`);
     });
 
     const shutdown = async () => {

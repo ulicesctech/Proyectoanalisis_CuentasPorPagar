@@ -23,7 +23,8 @@ Reversión (solo si aún no hay facturas especiales): `001_facturas_especiales_t
 
 ## 2. Configuración
 
-- **Aprobadores autorizados** (Configuración › Parámetros): `GRUPO_PARAMETRO = CXP_FE_APROBADOR`, `CODIGO = USUARIO_<id>`, `VALOR_NUMERO = USU_ID_USUARIO`, `VALOR_TEXTO = ROL_ID_ROL` con el que aprueba, `ACTIVO = S`.
+- **Rol aprobador** (Configuración › Parámetros): una fila activa con `GRUPO_PARAMETRO = CXP_FE_APROBADOR_ROL`, `CODIGO = ROL_APROBADOR`, `VALOR_NUMERO = ROL.ROL_ID_ROL` y `VALOR_TEXTO = NULL`. Selecciona el rol por `ROL_NOMBRE_ROL`; la pantalla conserva el ID como valor interno. Solo usuarios activos con ese rol activo pueden aprobar o rechazar en aprobación. La aprobación registra el `USU_ID_ROL` real. Si el nombre de ese rol es nulo o coincide con otro al ignorar espacios y mayúsculas, la configuración se rechaza.
+- El grupo anterior `CXP_FE_APROBADOR` conserva su significado histórico: `VALOR_NUMERO` es un **ID de usuario**. El código nuevo no lo lee ni lo convierte. Antes de cargar el grupo nuevo, consulta los datos existentes con `database/oracle/09_migraciones/diagnostico_fe_roles.sql`. La plantilla de migración `preparar_fe_rol_aprobador.sql` es independiente y no se ejecuta durante el despliegue automático.
 - **Reglas tributarias** (Facturas especiales › Reglas tributarias): no se precargan porcentajes; se registran los valores vigentes. Cambiar una regla = registrar una **nueva versión** desde hoy o una fecha futura; la anterior queda `REEMPLAZADA` con su vigencia cerrada.
 - Si existen reglas de aprobación (`CXP_REGLA_APROBACION`, entidad `DOCUMENTO`) que apliquen a la factura, se exigen sus niveles y cantidades antes de pasar a `APROBADA`.
 

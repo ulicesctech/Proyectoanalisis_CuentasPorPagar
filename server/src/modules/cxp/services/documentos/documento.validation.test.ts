@@ -131,7 +131,7 @@ test('el CRUD rechaza duplicados exactos por UUID, hash y combinación sin inser
   for (const change of [{}, { uuidFiscal: 'nuevo' }, { uuidFiscal: 'nuevo', hashOrigen: 'nuevo' }]) {
     const db = memory({ rows: [baseDocument()] });
     const service = createCxpService(cxpDocumentoRepository, db.run);
-    await assert.rejects(service.create({ ...registration, ...change }), { status: 409 });
+    await assert.rejects(service.create({ ...registration, ...change }, 4), { status: 409 });
     assert.deepEqual(db.writes, []);
   }
 });
@@ -139,7 +139,7 @@ test('el CRUD rechaza duplicados exactos por UUID, hash y combinación sin inser
 test('dos documentos activos con la misma combinación se rechazan sin insertar', async () => {
   const db = memory({ rows: [baseDocument()] });
   await assert.rejects(
-    createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, uuidFiscal: 'uuid-2', hashOrigen: 'hash-2' }),
+    createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, uuidFiscal: 'uuid-2', hashOrigen: 'hash-2' }, 4),
     (error: { status: number; details: { campo: string }[]; message: string }) =>
       error.status === 409 && error.details[0]?.campo === 'numeroDocumento' && error.message.includes('no anulado'),
   );
@@ -174,7 +174,7 @@ test('un documento ANULADA no impide reutilizar la combinación con UUID y hash 
   const db = memory({ rows: [{ ...baseDocument(), ESTADO: 'ANULADA' }] });
   const created = await createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, uuidFiscal: 'uuid-2', hashOrigen: 'hash-2',
-  });
+  }, 4);
   assert.equal(created.estado, 'RECIBIDO');
   assert.deepEqual(db.writes, ['INSERT']);
   assert.ok(db.queries.some(sql => sql.includes("ESTADO <> 'ANULADA'")));
@@ -187,7 +187,7 @@ test('UUID y hash siguen siendo globales aunque el documento existente esté ANU
   ]) {
     const db = memory({ rows: [{ ...baseDocument(), ESTADO: 'ANULADA' }] });
     await assert.rejects(
-      createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, ...change }),
+      createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, ...change }, 4),
       (error: { status: number; details: { campo: string }[] }) =>
         error.status === 409 && error.details[0]?.campo === (change.uuidFiscal ? 'hashOrigen' : 'uuidFiscal'),
     );
@@ -225,7 +225,7 @@ test('ORA-00001 identifica UUID, hash e índice condicional cuando Oracle inform
   ]) {
     const db = memory({ uniqueError: key });
     await assert.rejects(
-      createCxpService(cxpDocumentoRepository, db.run).create(registration),
+      createCxpService(cxpDocumentoRepository, db.run).create(registration, 4),
       (error: { status: number; details: { campo: string }[] }) => error.status === 409 && error.details[0]?.campo === field,
     );
     assert.deepEqual(db.writes, []);
@@ -235,7 +235,7 @@ test('ORA-00001 identifica UUID, hash e índice condicional cuando Oracle inform
 test('ORA-00001 del índice condicional con clave incompleta evita afirmar una combinación completa', async () => {
   const db = memory({ uniqueError: 'UX_CXP_DOC_DUPLICADO' });
   await assert.rejects(
-    createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, idProveedor: null }),
+    createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, idProveedor: null }, 4),
     (error: { status: number; details: { campo: string }[]; message: string }) =>
       error.status === 409 && error.details[0]?.campo === 'documento' && error.message.includes('incompleta'),
   );
@@ -244,7 +244,7 @@ test('ORA-00001 del índice condicional con clave incompleta evita afirmar una c
 
 test('ORA-00001 sin clave reconocible mantiene un conflicto genérico', async () => {
   const db = memory({ uniqueError: 'OTRA_CLAVE' });
-  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create(registration), {
+  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create(registration, 4), {
     status: 409, details: [],
   });
   assert.deepEqual(db.writes, []);
@@ -252,7 +252,7 @@ test('ORA-00001 sin clave reconocible mantiene un conflicto genérico', async ()
 
 test('un registro inicial válido entra como RECIBIDO', async () => {
   const db = memory();
-  const result = await createCxpService(cxpDocumentoRepository, db.run).create(registration);
+  const result = await createCxpService(cxpDocumentoRepository, db.run).create(registration, 4);
   assert.equal(result.estado, 'RECIBIDO');
   assert.equal(result.totalNeto, 100);
   assert.equal(result.diasCredito, 0);
@@ -264,7 +264,7 @@ test('el CRUD común no registra facturas especiales fuera de su flujo controlad
   const db = memory();
   await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, tipoDocumento: 'FACTURA_ESPECIAL',
-  }), { status: 409 });
+  }, 4), { status: 409 });
   assert.deepEqual(db.writes, []);
 });
 
@@ -272,7 +272,7 @@ test('un documento débito admite vencimiento igual a su fecha', async () => {
   const db = memory();
   const result = await createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, naturaleza: 'D', fechaDocumento: '2020-01-15', fechaVencimiento: '2020-01-15',
-  });
+  }, 4);
   assert.equal(result.estado, 'RECIBIDO');
   assert.deepEqual(db.writes, ['INSERT']);
 });
@@ -281,7 +281,7 @@ test('un documento débito vencido es válido cuando sus fechas históricas son 
   const db = memory({ conditions: [{ ID_CONDICION: 42, DIAS_CREDITO: 31, ESTADO: 'A' }] });
   const result = await createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, idCondicionCredito: 42, naturaleza: 'D', fechaDocumento: '2020-01-15', fechaVencimiento: '2020-02-15',
-  });
+  }, 4);
   assert.equal(result.fechaVencimiento, '2020-02-15');
   assert.equal(result.diasCredito, 31);
   assert.deepEqual(db.writes, ['INSERT']);
@@ -291,7 +291,7 @@ test('el servidor rechaza vencimiento anterior al documento débito sin insertar
   const db = memory();
   await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, naturaleza: 'D', fechaDocumento: '2020-02-15', fechaVencimiento: '2020-02-14',
-  }), (error: { status: number; details: { campo: string }[] }) =>
+  }, 4), (error: { status: number; details: { campo: string }[] }) =>
     [400, 422].includes(error.status) && error.details.some(issue => issue.campo === 'fechaVencimiento'));
   assert.deepEqual(db.writes, []);
 });
@@ -300,7 +300,7 @@ test('una condición de crédito activa calcula días calendario sin sumar días
   const db = memory({ conditions: [{ ID_CONDICION: 43, DIAS_CREDITO: 45, DIAS_GRACIA: 30, ESTADO: 'A' }] });
   const result = await createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, idCondicionCredito: 43, fechaDocumento: '2026-01-20',
-  });
+  }, 4);
   assert.equal(result.idCondicionCredito, 43);
   assert.equal(result.diasCredito, 45);
   assert.equal(result.fechaVencimiento, '2026-03-06');
@@ -310,7 +310,7 @@ test('una condición de crédito activa calcula días calendario sin sumar días
 test('una condición ausente o inactiva impide el alta sin escrituras', async () => {
   const withoutCondition = memory();
   const { idCondicionCredito: _omitted, ...withoutConditionInput } = registration;
-  await assert.rejects(createCxpService(cxpDocumentoRepository, withoutCondition.run).create(withoutConditionInput),
+  await assert.rejects(createCxpService(cxpDocumentoRepository, withoutCondition.run).create(withoutConditionInput, 4),
     (error: { status: number; details: { campo: string }[] }) =>
       error.status === 422 && error.details.some(issue => issue.campo === 'idCondicionCredito'));
   assert.deepEqual(withoutCondition.writes, []);
@@ -319,7 +319,7 @@ test('una condición ausente o inactiva impide el alta sin escrituras', async ()
     const db = memory({ conditions });
     await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
       ...registration, idCondicionCredito: 43,
-    }), (error: { status: number; details: { campo: string }[] }) =>
+    }, 4), (error: { status: number; details: { campo: string }[] }) =>
       error.status === 422 && error.details.some(issue => issue.campo === 'idCondicionCredito'));
     assert.deepEqual(db.writes, []);
   }
@@ -329,7 +329,7 @@ test('la API no acepta días o vencimiento distintos de la condición vigente', 
   const db = memory({ conditions: [{ ID_CONDICION: 43, DIAS_CREDITO: 30, ESTADO: 'A' }] });
   await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, idCondicionCredito: 43, fechaDocumento: '2026-01-15', diasCredito: 15, fechaVencimiento: '2026-01-30',
-  }), (error: { status: number; details: { campo: string }[] }) =>
+  }, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => ['diasCredito', 'fechaVencimiento'].includes(issue.campo)));
   assert.deepEqual(db.writes, []);
 });
@@ -338,7 +338,7 @@ test('el servidor rechaza la fecha futura de un DTE RECIBIDO sin insertar', asyn
   const db = memory();
   await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
     ...registration, naturaleza: 'D', fechaDocumento: '2999-01-01', fechaVencimiento: '2999-01-01',
-  }), (error: { status: number; details: { campo: string }[] }) =>
+  }, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 400 && error.details.some(issue => issue.campo === 'fechaDocumento'));
   assert.deepEqual(db.writes, []);
 });
@@ -351,7 +351,7 @@ test('el servidor rechaza fechas de calendario inexistentes antes de abrir una t
     const db = memory();
     await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({
       ...registration, naturaleza: 'D', ...change,
-    }), (error: { issues?: { path: PropertyKey[] }[] }) =>
+    }, 4), (error: { issues?: { path: PropertyKey[] }[] }) =>
       Boolean(error.issues?.some(issue => ['fechaDocumento', 'fechaVencimiento'].includes(String(issue.path[0])))));
     assert.deepEqual(db.writes, []);
   }
@@ -366,14 +366,14 @@ test('el límite de hoy usa America/Guatemala sin cambiar el día por UTC', () =
 
 test('el alta de DTE no admite un estado posterior o de borrador', async () => {
   const db = memory();
-  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, estado: 'BORRADOR' }), { status: 409 });
+  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).create({ ...registration, estado: 'BORRADOR' }, 4), { status: 409 });
   assert.deepEqual(db.writes, []);
 });
 
 test('RF04 conserva RECIBIDO ante diferencia de importes y detalle incompleto', async () => {
   for (const lines of [[{ ...baseLine(), TOTAL_LINEA: 90 }], [{ ...baseLine(), DESCRIPCION: null }]]) {
     const db = memory({ rows: [baseDocument()], lines });
-    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: unknown[] }) =>
+    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1, 4), (error: { status: number; details: unknown[] }) =>
       error.status === 422 && error.details.length > 0);
     assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
     assert.deepEqual(db.writes, []);
@@ -383,7 +383,7 @@ test('RF04 conserva RECIBIDO ante diferencia de importes y detalle incompleto', 
 test('RF04 rechaza un encabezado con subtotal distinto de sus líneas', async () => {
   const document = { ...baseDocument(), SUBTOTAL: 101, TOTAL_BRUTO: 101, TOTAL_NETO: 101, TOTAL_LOCAL: 101, SALDO_PENDIENTE: 101 };
   const db = memory({ rows: [document], lines: [baseLine()] });
-  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'subtotal'));
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
@@ -391,7 +391,7 @@ test('RF04 rechaza un encabezado con subtotal distinto de sus líneas', async ()
 
 test('RF04 no aplica la tolerancia bancaria de 0,01 a TOTAL_LOCAL del DTE', async () => {
   const db = memory({ rows: [{ ...baseDocument(), TOTAL_LOCAL: 100.01 }], lines: [baseLine()] });
-  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'totalLocal'));
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
@@ -399,7 +399,7 @@ test('RF04 no aplica la tolerancia bancaria de 0,01 a TOTAL_LOCAL del DTE', asyn
 
 test('RF04 valida líneas y tributos, y avanza a PENDIENTE_APROBACION', async () => {
   const db = memory({ rows: [baseDocument()], lines: [baseLine()] });
-  const result = await createDocumentoValidationOperation(db.run, db.storage)(1);
+  const result = await createDocumentoValidationOperation(db.run, db.storage)(1, 4);
   assert.equal(result.estado, 'PENDIENTE_APROBACION');
   assert.deepEqual(db.writes, ['UPDATE']);
 });
@@ -412,7 +412,7 @@ test('RF04 exige contenido DTE del mismo documento e íntegro antes de avanzar',
     { files: [dteRow()], fileContent: Buffer.from('alterado') },
   ]) {
     const db = memory({ rows: [baseDocument()], lines: [baseLine()], ...options });
-    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1),
+    await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1, 4),
       (error: { status: number; details: { campo: string }[] }) =>
         error.status === 422 && error.details.some(issue => issue.campo === 'archivos'));
     assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
@@ -424,28 +424,28 @@ test('RF04 concilia el impuesto del encabezado, línea y CXP_DOCUMENTO_TRIBUTO',
   const document = { ...baseDocument(), IMPUESTO_TOTAL: 10, TOTAL_BRUTO: 110, TOTAL_NETO: 110, TOTAL_LOCAL: 110, SALDO_PENDIENTE: 110 };
   const line = { ...baseLine(), IMPUESTO: 10, TOTAL_LINEA: 110 };
   const valid = memory({ rows: [document], lines: [line], tributes: [taxTribute()] });
-  assert.equal((await createDocumentoValidationOperation(valid.run, valid.storage)(1)).estado, 'PENDIENTE_APROBACION');
+  assert.equal((await createDocumentoValidationOperation(valid.run, valid.storage)(1, 4)).estado, 'PENDIENTE_APROBACION');
 
   const inconsistent = memory({ rows: [document], lines: [line], tributes: [{ ...taxTribute(), MONTO: 9 }] });
-  await assert.rejects(createDocumentoValidationOperation(inconsistent.run, inconsistent.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(inconsistent.run, inconsistent.storage)(1, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo === 'impuestoTotal'));
   assert.equal(inconsistent.rows[0].ESTADO, 'RECIBIDO');
 
   const included = memory({ rows: [document], lines: [line], tributes: [{ ...taxTribute(), INCLUIDO_PRECIO: 'S' }] });
-  await assert.rejects(createDocumentoValidationOperation(included.run, included.storage)(1), (error: { status: number; details: { campo: string }[] }) =>
+  await assert.rejects(createDocumentoValidationOperation(included.run, included.storage)(1, 4), (error: { status: number; details: { campo: string }[] }) =>
     error.status === 422 && error.details.some(issue => issue.campo.endsWith('INCLUIDO_PRECIO')));
   assert.equal(included.rows[0].ESTADO, 'RECIBIDO');
 });
 
 test('un fallo en UPDATE revierte la transición completa', async () => {
   const db = memory({ rows: [baseDocument()], lines: [baseLine()], updateError: true });
-  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1), /Fallo durante UPDATE/);
+  await assert.rejects(createDocumentoValidationOperation(db.run, db.storage)(1, 4), /Fallo durante UPDATE/);
   assert.equal(db.rows[0].ESTADO, 'RECIBIDO');
   assert.deepEqual(db.writes, []);
 });
 
 test('el PATCH común no puede saltar de RECIBIDO a PENDIENTE_APROBACION', async () => {
   const db = memory({ rows: [baseDocument()] });
-  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).update(1, { estado: 'PENDIENTE_APROBACION' }), { status: 409 });
+  await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).update(1, { estado: 'PENDIENTE_APROBACION' }, 4), { status: 409 });
   assert.deepEqual(db.writes, []);
 });

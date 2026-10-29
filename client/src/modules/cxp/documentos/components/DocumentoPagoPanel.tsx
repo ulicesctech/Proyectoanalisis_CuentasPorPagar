@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CxpAplicacion, CxpDocumento, CxpPago } from '@erp/contracts';
-import { apiClient, ApiError, buildQueryString } from '../../../../shared/api';
+import { apiClient, ApiError, buildQueryString } from '../../api';
+import { getOperadorId } from '../../operador/operador';
 import { Button } from '../../../../shared/ui-kit';
 import { DocumentoCatalogPicker } from './DocumentoCatalogPicker';
 import { formatDocumentoMoney, readableState } from '../documentoView';
@@ -15,7 +16,7 @@ export function DocumentoPagoPanel({ documento, onApplied }: Props) {
   const [payments, setPayments] = useState<CxpPago[]>([]);
   const [paymentId, setPaymentId] = useState('');
   const [amount, setAmount] = useState('');
-  const [actorId, setActorId] = useState('');
+  const [actorId, setActorId] = useState(getOperadorId);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

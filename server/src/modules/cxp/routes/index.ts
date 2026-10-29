@@ -2,6 +2,8 @@ import procesosRoutes from './procesos.routes';
 import { Router } from 'express';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { cxpStringQuery } from '../controllers/crud.controller';
+import { exigirActor, listadoUsuariosDisponible, resolverActor } from '../services/identidad';
+import { CxpError } from '../services/errors';
 import parametroRoutes from './configuracion/parametro.routes';
 import periodoRoutes from './configuracion/periodo.routes';
 import cuentaBancariaRoutes from './configuracion/cuentaBancaria.routes';
@@ -30,10 +32,19 @@ import retencionesRoutes from '../reports/retenciones/retenciones.routes';
 import bitacoraRoutes from '../reports/bitacora/bitacora.routes';
 
 const router = Router();
+// Identidad única del módulo: resuelve X-CXP-Actor-Id (si viene) para todas las rutas.
+router.use(resolverActor);
+// Toda escritura requiere el usuario operativo; las vistas previas por POST no guardan nada.
+const POST_SIN_ESCRITURA = new Set(['/documentos/calcular-vencimiento', '/facturas-especiales/calcular', '/proveedores/validar-nit']);
+router.use((req, res, next) => (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || POST_SIN_ESCRITURA.has(req.path)
+  ? next() : exigirActor(req, res, next)));
 router.use('/procesos', procesosRoutes);
 
 router.get('/catalogos/:catalog', async (req, res, next) => {
   try {
+    if (req.params.catalog === 'usuarios' && !listadoUsuariosDisponible()) {
+      throw new CxpError('Recurso no disponible', 404);
+    }
     res.json(await listCxpOptions(req.params.catalog, {
       search: cxpStringQuery(req, 'search'), selected: cxpStringQuery(req, 'selected'),
       filterField: cxpStringQuery(req, 'filterField'), filterValue: cxpStringQuery(req, 'filterValue'),

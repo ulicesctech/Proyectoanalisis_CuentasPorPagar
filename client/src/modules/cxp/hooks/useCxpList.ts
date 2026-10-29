@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CxpRecord, PaginatedResponse, PaginationMeta } from '@erp/contracts';
-import { apiClient, ApiError, buildQueryString } from '../../../shared/api';
+import { apiClient, ApiError, buildQueryString } from '../api';
 
 export function useCxpList(resource: string, params: { page: number; search: string; filterField?: string; filterValue?: string }) {
   const [data, setData] = useState<CxpRecord[]>([]);

@@ -76,8 +76,9 @@ export function createDocumentoValidationOperation(
   run: typeof withCxpTransaction = withCxpTransaction,
   storage: DteStorage = createDteStorage(),
 ) {
-  return async (id: number) => {
+  return async (id: number, actorId: number) => {
     if (!Number.isSafeInteger(id) || id <= 0) throw new CxpError('El identificador debe ser un entero positivo');
+    if (!Number.isSafeInteger(actorId) || actorId <= 0) throw new CxpError('Selecciona el usuario con el que estás operando', 401);
     return run(async connection => {
       const transaction = cxpDocumentoRepository.bind(connection);
       const document = await transaction.findById(id, true);
@@ -96,7 +97,7 @@ export function createDocumentoValidationOperation(
         else throw error;
       }
       if (issues.length) throw new CxpError('El documento no superó la validación RF04', 422, issues);
-      await transaction.update(id, { estado: 'PENDIENTE_APROBACION' });
+      await transaction.update(id, { estado: 'PENDIENTE_APROBACION', modificadoPor: actorId });
       return (await transaction.findById(id))!;
     });
   };

@@ -32,7 +32,7 @@ if (!['localhost', '127.0.0.1', '::1'].includes(HOST_BD)) {
 }
 
 const ANALISTA = 1;      // registra
-const APROBADOR = 2;     // autorizado en CXP_FE_APROBADOR
+const APROBADOR = 2;     // fixture local con el rol configurado para facturas especiales
 const NO_AUTORIZADO = 3;
 const PROVEEDOR = 1;
 const SUCURSAL = 1;
@@ -48,8 +48,9 @@ let server: Server;
 let base = '';
 
 async function api(method: string, path: string, body?: unknown) {
+  const actor = body && typeof body === 'object' && 'usuario' in body ? Number(body.usuario) : ANALISTA;
   const response = await fetch(`${base}${path}`, {
-    method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+    method, headers: { 'Content-Type': 'application/json', 'X-CXP-Actor-Id': String(actor) }, body: body === undefined ? undefined : JSON.stringify(body),
   });
   const type = response.headers.get('content-type') ?? '';
   const data = type.includes('application/json') ? await response.json() : Buffer.from(await response.arrayBuffer());
@@ -80,10 +81,18 @@ before(async () => {
   app.use(errorHandler);
   server = app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  // Aprobador autorizado a través del módulo existente de Parámetros (reutilización).
+  // Configura el rol real del usuario de prueba; no reutiliza el grupo legado por usuario.
+  const connection = await getConnection();
+  let idRol: number;
+  try {
+    const result = await connection.execute<{ USU_ID_ROL: number }>(
+      'SELECT USU_ID_ROL FROM USUARIO WHERE USU_ID_USUARIO = :id', { id: APROBADOR });
+    idRol = Number(result.rows?.[0]?.USU_ID_ROL);
+    assert.ok(Number.isSafeInteger(idRol) && idRol > 0);
+  } finally { await connection.close(); }
   const parametro = await api('POST', '/api/cxp/parametros', {
-    grupoParametro: 'CXP_FE_APROBADOR', codigo: `USUARIO_${APROBADOR}`, nombre: 'Aprobador de facturas especiales (prueba)',
-    valorTexto: '1', valorNumero: APROBADOR, activo: 'S',
+    grupoParametro: 'CXP_FE_APROBADOR_ROL', codigo: 'ROL_APROBADOR', nombre: 'Rol aprobador de facturas especiales (prueba)',
+    valorNumero: idRol, activo: 'S',
   });
   assert.ok([201, 409].includes(parametro.status), JSON.stringify(parametro.data));
 });

@@ -13,6 +13,7 @@ import { applyCxpMovement } from './application.service';
 import { checkApprovals, checkInitialState, checkStateChange, resetApprovals } from './workflow.service';
 import { checkFacturaEspecialGuard } from './documentos/facturaEspecial.guard';
 import { CxpError } from './errors';
+import { resolveActorFields } from './actorFields';
 import {
   assertCxpDocumentoCalendarDates, assertCxpDocumentoCreateState, assertCxpDocumentoCrudChange,
   assertCxpDocumentoComponentsEditable,
@@ -165,13 +166,17 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
       return row;
     },
     options(query: { search?: string; selected?: string }) { return listCxpOptions(resource, query); },
-    async create(raw: unknown) {
+    async create(raw: unknown, actorId: number) {
+      validId(actorId);
       const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
       const suppliedTerms = {
         fechaVencimiento: Object.hasOwn(rawRecord, 'fechaVencimiento') ? rawRecord.fechaVencimiento : undefined,
         diasCredito: Object.hasOwn(rawRecord, 'diasCredito') ? rawRecord.diasCredito : undefined,
       };
-      let input = checked(resource, schema.create.parse(raw) as CxpRecord);
+      // La autoría la fija el usuario operativo: antes del esquema (campos obligatorios)
+      // y después (estado por defecto que también registra al actor).
+      const authored = resolveActorFields(resource, actorId, rawRecord as CxpRecord);
+      let input = checked(resource, resolveActorFields(resource, actorId, schema.create.parse(authored) as CxpRecord));
       if (resource === 'compromisos' && input.tipoCompromiso === 'FONDO_CAJA_CHICA') {
         if (Object.hasOwn(rawRecord, 'saldoCapital') && Number(input.saldoCapital) !== Number(input.montoTotal)) {
           throw new CxpError('El fondo debe iniciar con el saldo igual al monto total', 409);
@@ -227,9 +232,10 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         return (await transaction.findById(id))!;
       }); } catch (error) { if (resource === 'documentos') mapDocumentoUniqueError(error, input); throw error; }
     },
-    async update(id: number, raw: unknown) {
+    async update(id: number, raw: unknown, actorId: number) {
       validId(id);
-      const patch = schema.update.parse(raw) as CxpRecord;
+      validId(actorId);
+      let patch = schema.update.parse(raw) as CxpRecord;
       if (!Object.keys(patch).length) throw new CxpError('No se recibieron campos para actualizar');
       if (resource === 'pagos' && patch.codigoPago != null && String(patch.codigoPago).startsWith('CP-')) {
         throw new CxpError('El código CP- está reservado para el proceso de pagos', 409);
@@ -239,6 +245,7 @@ export function createCxpService(repository: CxpRepository, run: typeof withCxpT
         const transaction = repository.bind(connection);
         const current = await transaction.findById(id, true);
         if (!current) throw new CxpError(`${entity.singular} no encontrado`, 404);
+        patch = resolveActorFields(resource, actorId, patch, current);
         await assertOutsideProcess(connection, resource, current);
         await checkFacturaEspecialGuard(connection, resource, current, patch);
         if (resource === 'aprobaciones' && (current.idDocumento != null || patch.idDocumento != null)) {

@@ -82,6 +82,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "modificadoPor",
+        "readOnly": true,
         "label": "Modificado por",
         "type": "number",
         "required": false,
@@ -225,6 +226,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "cerradoPor",
+        "readOnly": true,
         "label": "Cerrado por",
         "type": "number",
         "required": false,
@@ -241,6 +243,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "reabiertoPor",
+        "readOnly": true,
         "label": "Reabierto por",
         "type": "number",
         "required": false,
@@ -481,6 +484,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "verificadoPor",
+        "readOnly": true,
         "label": "Verificado por",
         "type": "number",
         "required": false,
@@ -490,6 +494,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "creadoPor",
+        "readOnly": true,
         "label": "Creado por",
         "type": "number",
         "required": true,
@@ -508,6 +513,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "modificadoPor",
+        "readOnly": true,
         "label": "Modificado por",
         "type": "number",
         "required": false,
@@ -772,6 +778,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "creadoPor",
+        "readOnly": true,
         "label": "Creado por",
         "type": "number",
         "required": true,
@@ -790,6 +797,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "modificadoPor",
+        "readOnly": true,
         "label": "Modificado por",
         "type": "number",
         "required": false,
@@ -1507,6 +1515,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "anuladoPor",
+        "readOnly": true,
         "label": "Anulado por",
         "type": "number",
         "required": false,
@@ -1531,6 +1540,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "creadoPor",
+        "readOnly": true,
         "label": "Creado por",
         "type": "number",
         "required": true,
@@ -1549,6 +1559,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "modificadoPor",
+        "readOnly": true,
         "label": "Modificado por",
         "type": "number",
         "required": false,
@@ -2016,6 +2027,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "generadoPor",
+        "readOnly": true,
         "label": "Generado por",
         "type": "number",
         "required": true,
@@ -2170,6 +2182,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "creadoPor",
+        "readOnly": true,
         "label": "Creado por",
         "type": "number",
         "required": true,
@@ -2179,6 +2192,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "enviadoPor",
+        "readOnly": true,
         "label": "Enviado por",
         "type": "number",
         "required": false,
@@ -2564,6 +2578,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "programadoPor",
+        "readOnly": true,
         "label": "Programado por",
         "type": "number",
         "required": true,
@@ -2819,6 +2834,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "aplicadoPor",
+        "readOnly": true,
         "label": "Aplicado por",
         "type": "number",
         "required": true,
@@ -2828,6 +2844,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "revertidoPor",
+        "readOnly": true,
         "label": "Revertido por",
         "type": "number",
         "required": false,
@@ -3060,6 +3077,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "creadaPor",
+        "readOnly": true,
         "label": "Creada por",
         "type": "number",
         "required": true,
@@ -3187,6 +3205,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "idUsuarioAprobador",
+        "readOnly": true,
         "label": "Usuario aprobador",
         "type": "number",
         "required": false,
@@ -3196,6 +3215,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "delegadoPor",
+        "readOnly": true,
         "label": "Delegado por",
         "type": "number",
         "required": false,
@@ -3357,6 +3377,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "elaboradaPor",
+        "readOnly": true,
         "label": "Elaborada por",
         "type": "number",
         "required": true,
@@ -3375,6 +3396,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "cerradaPor",
+        "readOnly": true,
         "label": "Cerrada por",
         "type": "number",
         "required": false,
@@ -3660,6 +3682,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "conciliadoPor",
+        "readOnly": true,
         "label": "Conciliado por",
         "type": "number",
         "required": false,
@@ -3918,6 +3941,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "usuarioEvento",
+        "readOnly": true,
         "label": "Usuario evento",
         "type": "number",
         "required": true,
@@ -4136,6 +4160,7 @@ export const CXP_ENTITIES: readonly CxpEntityDefinition[] = [
       },
       {
         "name": "cargadoPor",
+        "readOnly": true,
         "label": "Cargado por",
         "type": "number",
         "required": true,

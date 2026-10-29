@@ -345,7 +345,7 @@ export const cxpFacturaEspecialService = {
   },
 
   /**
-   * APROBACIÓN: solo aprobadores autorizados (parámetro CXP_FE_APROBADOR) y distintos
+   * APROBACIÓN: solo usuarios activos del rol CXP_FE_APROBADOR_ROL y distintos
    * de quien registró. La decisión se guarda en CXP_APROBACION y el documento pasa a
    * APROBADA cuando se cumplen las reglas de aprobación configuradas.
    */

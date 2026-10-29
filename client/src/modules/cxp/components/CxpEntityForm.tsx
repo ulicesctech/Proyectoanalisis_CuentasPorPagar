@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Save, X } from 'lucide-react';
 import {
-  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
+  CXP_SCHEMAS, applyCxpActorFields, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
 } from '@erp/contracts';
-import { apiClient, ApiError } from '../../../shared/api';
+import { apiClient, ApiError } from '../api';
+import { getOperadorId } from '../operador/operador';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 import { CxpButton } from './CxpButton';
@@ -88,12 +89,14 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     source[field.name] === '' ? null : field.type === 'number' ? Number(source[field.name]) : source[field.name],
   ]));
   const raw = asRecord(values);
+  const feRoleParameter = resource === 'parametros' && values.grupoParametro === 'CXP_FE_APROBADOR_ROL' && values.codigo === 'ROL_APROBADOR';
   let preview = raw;
   try { preview = prepareCxpRecord(resource, { ...raw, montoAplicado: record?.montoAplicado ?? 0 }); } catch { /* La validación indica el campo inválido al guardar. */ }
-  const visible = entity.fields.filter(field => isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association));
+  const visible = entity.fields.filter(field => isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association) && !(feRoleParameter && field.name === 'valorTexto'));
   const sections = sectionsOrder.filter(name => visible.some(field => field.section === name));
   const sectionIndex = sections.indexOf(section);
   const lastSection = sectionIndex === sections.length - 1;
+  useEffect(() => { if (!sections.includes(section)) setSection(sections[0]); }, [section, sections.join('|')]);
   const goToSection = (next: string) => {
     setSection(next);
     window.setTimeout(() => sectionHeading.current?.focus(), 0);
@@ -106,6 +109,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       entity.fields.forEach(field => { if (!isCxpFieldVisible(resource, field.name, nextRecord)) next[field.name] = ''; });
       if (name === 'idDocumento' && resource === 'documentos-tributos') next.idDetalle = '';
       if (name === 'idProveedor' && resource === 'pagos') next.idCuentaDestino = '';
+      if (resource === 'parametros' && next.grupoParametro === 'CXP_FE_APROBADOR_ROL' && next.codigo === 'ROL_APROBADOR') next.valorTexto = '';
       return next;
     });
     setErrors(current => ({ ...current, [name]: '' }));
@@ -128,9 +132,14 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     if (management && !lastSection) { goToSection(sections[sectionIndex + 1]); return; }
     setErrors({});
     setFormError(null);
+    if (feRoleParameter && !values.valorNumero) {
+      showErrors({ valorNumero: 'Selecciona un rol activo por nombre.' });
+      return;
+    }
     const payload: CxpRecord = {};
     for (const field of entity.fields) {
       if (field.readOnly) continue;
+      if (feRoleParameter && field.name === 'valorTexto' && !editing) continue;
       const text = values[field.name] ?? '';
       if (editing && text === initial[field.name]) continue;
       if (text === '') {
@@ -141,8 +150,16 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       payload[field.name] = field.type === 'number' ? Number(text) : text;
     }
     if (editing && Object.keys(payload).length === 0) { onCancel(); return; }
+    // La autoría (creado por, aplicado por, aprobador…) la registra el usuario operativo.
+    const operador = Number(getOperadorId());
+    if (!Number.isSafeInteger(operador) || operador <= 0) {
+      setFormError('Elige arriba con qué usuario estás operando ("Operando como") para poder guardar.');
+      return;
+    }
+    const authored = applyCxpActorFields(resource, operador, payload, editing ? record : null);
+    if (authored.issues.length) { showErrors(Object.fromEntries(authored.issues.map(issue => [issue.campo, issue.mensaje]))); return; }
     const schema = editing ? CXP_SCHEMAS[resource].update : CXP_SCHEMAS[resource].create;
-    const parsed = schema.safeParse(payload);
+    const parsed = schema.safeParse(authored.record);
     if (!parsed.success) {
       showErrors(Object.fromEntries(parsed.error.issues.map(issue => [String(issue.path[0] ?? ''), issue.message])));
       return;
@@ -180,6 +197,10 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     const props = { id: `cxp-${field.name}`, label: field.label, required: field.required && !field.readOnly,
       error: errors[field.name], value, isReadOnly: locked,
       className: paymentForm && !field.lookup && !field.options ? field.type === 'number' ? 'cxp-field-number' : field.type === 'date' ? 'cxp-field-date' : field.type === 'datetime' ? 'cxp-field-datetime' : 'cxp-field-text' : undefined };
+    if (feRoleParameter && field.name === 'valorNumero') {
+      return <RelationSelect key={field.name} {...props} label="Rol aprobador" catalog="roles" readOnly={locked} allowCreate={false}
+        onChange={next => change(field.name, next)} />;
+    }
     if (field.lookup) {
       let filterField: string | undefined;
       let filterValue: string | undefined;

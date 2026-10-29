@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiClient } from '../../../shared/api';
+import { apiClient } from '../api';
 import { Button, TextInput } from '../../../shared/ui-kit';
 import { clearCxpCatalogCache } from '../components/RelationSelect';
 

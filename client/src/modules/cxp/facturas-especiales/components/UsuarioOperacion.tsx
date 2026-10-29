@@ -1,33 +1,15 @@
-import { useEffect, useState } from 'react';
 import { UserRound } from 'lucide-react';
 import { RelationSelect } from '../../components/RelationSelect';
-
-const KEY = 'cxp.facturasEspeciales.usuario';
-const EVENT = 'cxp-usuario-operacion';
-
-function leer(): string {
-  try { return sessionStorage.getItem(KEY) ?? ''; } catch { return ''; }
-}
+import { useOperadorId } from '../../operador/operador';
 
 /**
- * Usuario que realiza las operaciones del flujo. El ERP aún no tiene inicio de sesión,
- * así que se elige del catálogo común USUARIO (como en creadoPor/modificadoPor del resto
- * de CXP) y se recuerda durante la sesión del navegador. El servidor valida la
- * autorización de cada operación y la registra en el historial.
+ * Usuario que realiza las operaciones del flujo. Es el mismo usuario operativo de CXP
+ * ("Operando como" en la barra superior): elegirlo aquí o allí cambia ambos. El ERP aún
+ * no tiene inicio de sesión; el servidor exige que coincida, valida la autorización de
+ * cada operación y la registra en el historial.
  */
 export function useUsuarioOperacion(): [string, (value: string) => void] {
-  const [usuario, setUsuario] = useState(leer);
-  useEffect(() => {
-    const sync = () => setUsuario(leer());
-    window.addEventListener(EVENT, sync);
-    return () => window.removeEventListener(EVENT, sync);
-  }, []);
-  const cambiar = (value: string) => {
-    try { sessionStorage.setItem(KEY, value); } catch { /* el valor se conserva solo en memoria */ }
-    setUsuario(value);
-    window.dispatchEvent(new Event(EVENT));
-  };
-  return [usuario, cambiar];
+  return useOperadorId();
 }
 
 export function UsuarioOperacion() {

@@ -9,6 +9,9 @@ import { previewDocumentoDueDate } from '../../services/documentos/documento.due
 import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
 import { documentoPaymentOperations, listDocumentoEligiblePayments } from '../../services/documentos/documento.payment';
 import type { Request, Response, NextFunction } from 'express';
+import { actorForField, requireActorId, withActorField } from '../../services/actorFields';
+import { cxpActor } from '../../services/identidad';
+import { CxpError } from '../../services/errors';
 
 const baseController = createCxpController(cxpDocumentoService);
 
@@ -27,17 +30,23 @@ export const cxpDocumentoController = {
     catch (error) { next(error); }
   },
   async validate(req: Request, res: Response, next: NextFunction) {
-    try { res.json(await validateReceivedDocumento(Number(req.params.id))); }
+    try { res.json(await validateReceivedDocumento(Number(req.params.id), requireActorId(res))); }
     catch (error) { next(error); }
   },
   async approval(req: Request, res: Response, next: NextFunction) {
     try {
-      const actor = cxpStringQuery(req, 'actorId');
-      res.json(await readDocumentoApprovalContext(Number(req.params.id), actor === undefined ? undefined : Number(actor)));
+      // El contexto se calcula para el usuario operativo; actorId (si viene) debe coincidir.
+      const actor = cxpActor(res);
+      const requested = cxpStringQuery(req, 'actorId');
+      if (requested !== undefined && requested !== '') {
+        if (!actor) throw new CxpError('Selecciona el usuario con el que estás operando', 401);
+        actorForField(requested, actor.id, 'actorId');
+      }
+      res.json(await readDocumentoApprovalContext(Number(req.params.id), actor?.id));
     } catch (error) { next(error); }
   },
   async decideApproval(req: Request, res: Response, next: NextFunction) {
-    try { res.json(await decideDocumentoApproval(Number(req.params.id), req.body)); }
+    try { res.json(await decideDocumentoApproval(Number(req.params.id), withActorField(req.body, 'idUsuarioAprobador', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   async previewDueDate(req: Request, res: Response, next: NextFunction) {
@@ -47,7 +56,7 @@ export const cxpDocumentoController = {
   async uploadDte(req: Request, res: Response, next: NextFunction) {
     try {
       res.status(201).json(await uploadDocumentoDte(Number(req.params.id), req.body,
-        req.header('X-File-Name'), req.header('Content-Type')));
+        req.header('X-File-Name'), req.header('Content-Type'), requireActorId(res)));
     } catch (error) { next(error); }
   },
   async listFiles(req: Request, res: Response, next: NextFunction) {
@@ -72,11 +81,11 @@ export const cxpDocumentoController = {
     catch (error) { next(error); }
   },
   async applyPayment(req: Request, res: Response, next: NextFunction) {
-    try { res.status(201).json(await documentoPaymentOperations.apply(Number(req.params.id), req.body)); }
+    try { res.status(201).json(await documentoPaymentOperations.apply(Number(req.params.id), withActorField(req.body, 'aplicadoPor', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   async reversePayment(req: Request, res: Response, next: NextFunction) {
-    try { res.json(await documentoPaymentOperations.reverse(Number(req.params.id), Number(req.params.idAplicacion), req.body)); }
+    try { res.json(await documentoPaymentOperations.reverse(Number(req.params.id), Number(req.params.idAplicacion), withActorField(req.body, 'revertidoPor', requireActorId(res)))); }
     catch (error) { next(error); }
   },
 };

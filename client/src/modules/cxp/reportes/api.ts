@@ -3,7 +3,7 @@ import type {
   CxpRetencionesFiltros, CxpRetencionesReporte, CxpRetencionesRespuesta,
   CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta, CxpParametro,
 } from '@erp/contracts';
-import { apiClient, buildQueryString } from '../../../shared/api';
+import { apiClient, buildQueryString } from '../api';
 
 export type FormatoExportacion = 'excel' | 'pdf';
 
