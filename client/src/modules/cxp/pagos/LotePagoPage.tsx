@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import type { CxpRecord, PaginatedResponse } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
-import { apiClient, ApiError } from '../../../shared/api';
+import { apiClient, ApiError } from '../api';
 import { CxpLayout } from '../CxpLayout';
 import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';

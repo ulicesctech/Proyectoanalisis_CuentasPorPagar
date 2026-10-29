@@ -146,13 +146,18 @@ export function facturaEspecialTx(connection: Connection) {
       return siguiente;
     },
 
-    async aprobadorAutorizado(idUsuario: number): Promise<{ idRol: number } | null> {
+    /**
+     * Autoriza por usuario (parámetro CXP_FE_APROBADOR activo), sin exigir rol.
+     * VALOR_TEXTO solo aporta el ID_ROL_APROBADOR que CXP_APROBACION exige como dato.
+     */
+    async aprobadorAutorizado(idUsuario: number): Promise<{ idRol: number | null } | null> {
       const result = await connection.execute<{ ROL: string | null }>(
         `SELECT VALOR_TEXTO AS ROL FROM CXP_PARAMETRO
           WHERE GRUPO_PARAMETRO = 'CXP_FE_APROBADOR' AND VALOR_NUMERO = :idUsuario AND ACTIVO = 'S'
           FETCH FIRST 1 ROWS ONLY`, { idUsuario }, OPTIONS);
-      const rol = Number(result.rows?.[0]?.ROL);
-      return result.rows?.length && Number.isSafeInteger(rol) && rol > 0 ? { idRol: rol } : null;
+      if (!result.rows?.length) return null;
+      const rol = Number(result.rows[0].ROL);
+      return { idRol: Number.isSafeInteger(rol) && rol > 0 ? rol : null };
     },
 
     async insertExtension(data: { idDocumento: number; proveedorNombre: string; proveedorNit: string | null; proveedorCui: string | null;

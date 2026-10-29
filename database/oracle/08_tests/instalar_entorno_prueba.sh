@@ -5,6 +5,7 @@
 #   2. Tablas, FK y parametros del DDL oficial de CXP (sin vistas ni auditoria,
 #      que exigen CREATE VIEW).
 #   3. Migracion 001 de facturas especiales y tributos.
+#   4. Identidad y catalogos de prueba (fe_01_identidad_prueba.sql).
 #
 # Uso: database/oracle/08_tests/instalar_entorno_prueba.sh <ruta al DDL de CXP>
 #      (p. ej. ~/Downloads/CXP_Oracle21c_Completo_102FK_sin_triggers.sql)
@@ -47,5 +48,8 @@ echo "== 2. DDL de CXP (tablas, FK y parametros)"
 
 echo "== 3. Migracion 001"
 run_sql < "$DIR/../09_migraciones/001_facturas_especiales_tributos.sql"
+
+echo "== 4. Identidad y catalogos de prueba (usuarios, roles, condiciones)"
+run_sql < "$DIR/fe_01_identidad_prueba.sql"
 
 echo "Entorno de pruebas listo."

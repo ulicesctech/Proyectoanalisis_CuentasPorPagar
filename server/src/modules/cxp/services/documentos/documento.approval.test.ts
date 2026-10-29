@@ -142,8 +142,26 @@ test('un rechazo exige motivo, registra al actor y cambia el documento a RECHAZA
   assert.equal(db.approvals[0].ESTADO, 'RECHAZADA');
 });
 
-test('rol incorrecto, usuario inactivo y autoaprobación se rechazan sin escrituras', async () => {
-  for (const actor of [30, 31, 10]) {
+test('los roles no se usan: un usuario con otro rol puede aprobar', async () => {
+  const db = memory();
+  await approve(createDocumentoApprovalOperation(db.run), 30);
+  assert.equal(db.approvals[0].ID_USUARIO_APROBADOR, 30);
+  assert.equal(db.document.ESTADO, 'APROBADA');
+});
+
+test('sin roles, un mismo usuario no resuelve dos reglas del mismo documento', async () => {
+  const db = memory({ rules: [ruleRow(), { ...ruleRow(), ID_REGLA: 2, NOMBRE_REGLA: 'Otra regla' }] });
+  const service = createDocumentoApprovalOperation(db.run);
+  await approve(service, 20, 1);
+  assert.equal(db.document.ESTADO, 'PENDIENTE_APROBACION');
+  await assert.rejects(approve(service, 20, 2), { status: 403 });
+  assert.equal(db.approvals.length, 1);
+  await approve(service, 21, 2);
+  assert.equal(db.document.ESTADO, 'APROBADA');
+});
+
+test('usuario inactivo y autoaprobación se rechazan sin escrituras', async () => {
+  for (const actor of [31, 10]) {
     const db = memory();
     await assert.rejects(approve(createDocumentoApprovalOperation(db.run), actor), { status: 403 });
     assert.deepEqual(db.writes, []);
@@ -187,6 +205,6 @@ test('el CRUD genérico no crea aprobaciones de documentos', async () => {
   await assert.rejects(createCxpService(cxpAprobacionRepository, db.run).create({
     idDocumento: 1, nivel: 1, idRolAprobador: 2, estado: 'APROBADA',
     idUsuarioAprobador: 20, fechaDecision: '2026-10-03T10:00:00',
-  }), { status: 409 });
+  }, 20), { status: 409 });
   assert.deepEqual(db.writes, []);
 });

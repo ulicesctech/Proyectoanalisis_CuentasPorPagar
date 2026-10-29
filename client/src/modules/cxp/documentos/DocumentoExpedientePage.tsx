@@ -5,7 +5,8 @@ import type {
   CxpAplicacion, CxpArchivo, CxpDocumento, CxpDocumentoDetalle, CxpDocumentoTributo,
   CxpDocumentoExpediente, CxpRecord,
 } from '@erp/contracts';
-import { apiClient, ApiError, buildQueryString } from '../../../shared/api';
+import { apiClient, ApiError, buildQueryString } from '../api';
+import { getOperadorId } from '../operador/operador';
 import { Modal } from '../../../shared/components';
 import { Button, DataTable, TextArea } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
@@ -34,7 +35,7 @@ type ApprovalContext = {
     fechaDecision: string | null; observacion: string | null;
   }>;
   actor: null | {
-    idUsuario: number; nombre: string | null; idRol: number | null; puedeDecidir: boolean;
+    idUsuario: number; nombre: string | null; puedeDecidir: boolean;
     reglasDisponibles: number[]; impedimento: string | null;
   };
   impedimento: string | null;
@@ -123,12 +124,12 @@ export function CxpDocumentoExpedientePage() {
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [approval, setApproval] = useState<ApprovalContext | null>(null);
   const [approvalLoading, setApprovalLoading] = useState(false);
-  const [actorId, setActorId] = useState('');
+  const [actorId, setActorId] = useState(getOperadorId);
   const [observation, setObservation] = useState('');
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState<number | null>(null);
-  const [reverterId, setReverterId] = useState('');
+  const [reverterId, setReverterId] = useState(getOperadorId);
   const [reversalReason, setReversalReason] = useState('');
   const [reversalBusy, setReversalBusy] = useState(false);
   const [reversalError, setReversalError] = useState<string | null>(null);

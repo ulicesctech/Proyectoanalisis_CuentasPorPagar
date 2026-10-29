@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
-  CXP_SCHEMAS, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
+  CXP_SCHEMAS, applyCxpActorFields, getCxpEntity, isCxpFieldVisible, isCxpFutureDateRestricted, prepareCxpRecord, cxpAllowedStates, cxpNow, cxpToday, validateCxpRecord,
   type CxpRecord, type CxpResource, type CxpFieldDefinition,
 } from '@erp/contracts';
-import { apiClient, ApiError } from '../../../shared/api';
+import { apiClient, ApiError } from '../api';
+import { getOperadorId } from '../operador/operador';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 
@@ -123,8 +124,16 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       payload[field.name] = field.type === 'number' ? Number(text) : text;
     }
     if (editing && Object.keys(payload).length === 0) { onCancel(); return; }
+    // La autoría (creado por, aplicado por, aprobador…) la registra el usuario operativo.
+    const operador = Number(getOperadorId());
+    if (!Number.isSafeInteger(operador) || operador <= 0) {
+      setFormError('Elige arriba con qué usuario estás operando ("Operando como") para poder guardar.');
+      return;
+    }
+    const authored = applyCxpActorFields(resource, operador, payload, editing ? record : null);
+    if (authored.issues.length) { showErrors(Object.fromEntries(authored.issues.map(issue => [issue.campo, issue.mensaje]))); return; }
     const schema = editing ? CXP_SCHEMAS[resource].update : CXP_SCHEMAS[resource].create;
-    const parsed = schema.safeParse(payload);
+    const parsed = schema.safeParse(authored.record);
     if (!parsed.success) {
       showErrors(Object.fromEntries(parsed.error.issues.map(issue => [String(issue.path[0] ?? ''), issue.message])));
       return;

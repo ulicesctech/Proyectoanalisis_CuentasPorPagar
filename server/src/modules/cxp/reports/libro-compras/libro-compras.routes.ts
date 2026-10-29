@@ -10,6 +10,7 @@ import { generarPdfLibroCompras } from './libro-compras.pdf';
 import { getConnection } from '../../../../config/database';
 import { cxpEventoRepository } from '../../repositories/control/evento.repository';
 import { findApprovalActor } from '../../repositories/documentos/documentoApproval.repository';
+import { actorForField, requireActorId } from '../../services/actorFields';
 const router = Router();
 
 /**
@@ -133,10 +134,8 @@ const archivo =
 
 // Registrar generación del libro de compras
 if (resultado.periodo.idPeriodo !== null) {
-  const usuarioEvento =
-    req.query.usuarioEvento !== undefined
-      ? Number(req.query.usuarioEvento)
-      : NaN;
+  // El evento lo firma el usuario operativo; usuarioEvento (si viene) debe coincidir.
+  const usuarioEvento = actorForField(req.query.usuarioEvento, requireActorId(res), 'usuarioEvento');
 
   if (!Number.isInteger(usuarioEvento) || usuarioEvento <= 0) {
     throw new Error(
@@ -240,10 +239,8 @@ const pdf = await generarPdfLibroCompras(resultado);
 
 // Registrar generación del libro de compras en PDF
 if (resultado.periodo.idPeriodo !== null) {
-  const usuarioEvento =
-    req.query.usuarioEvento !== undefined
-      ? Number(req.query.usuarioEvento)
-      : NaN;
+  // El evento lo firma el usuario operativo; usuarioEvento (si viene) debe coincidir.
+  const usuarioEvento = actorForField(req.query.usuarioEvento, requireActorId(res), 'usuarioEvento');
 
   if (!Number.isInteger(usuarioEvento) || usuarioEvento <= 0) {
     throw new Error(

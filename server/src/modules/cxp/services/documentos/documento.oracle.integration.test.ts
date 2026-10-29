@@ -119,7 +119,7 @@ test('alta completa de DTE en Oracle de pruebas queda RECIBIDO', {
       moneda: 'GTQ',
       tipoCambio: 1,
       subtotal: 1,
-    });
+    }, Number(relations.ID_USUARIO));
     idDocumento = Number(created.idDocumento);
     const stored = await cxpDocumentoRepository.bind(connection).findById(idDocumento);
     assert.equal(stored?.estado, 'RECIBIDO');

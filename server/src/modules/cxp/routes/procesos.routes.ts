@@ -1,83 +1,33 @@
 import { consultaProcesosSchema } from '@erp/contracts';
-import type { ActorProceso } from '@erp/contracts';
 import { Router } from 'express';
 
-import { getConnection } from '../../../config/database';
 import { procesoStore } from '../repositories/proceso.repository';
 import { CxpError } from '../services/errors';
-import { requireProcessActor } from '../services/procesos/auth';
+import { exigirActor, exigirListadoUsuarios, listarUsuariosOperativos } from '../services/identidad';
 import { createPaymentWorkflow } from '../services/procesos/workflow';
 
 const router = Router();
 const workflow = createPaymentWorkflow(procesoStore);
 
 /**
- * Lista de usuarios operativos.
- * Este endpoint debe ir ANTES de requireProcessActor porque el usuario
- * todavía no ha seleccionado "Operando como".
+ * Lista de usuarios operativos para elegir "Operando como".
+ * Va antes de exigirActor porque el usuario todavía no ha elegido identidad.
+ * Solo existe en el modo de identidad provisional.
  */
-router.get('/usuarios-operativos', async (_req, res, next) => {
-  let connection;
-
+router.get('/usuarios-operativos', exigirListadoUsuarios, async (_req, res, next) => {
   try {
-    connection = await getConnection();
-
-    const result = await connection.execute<{
-      ID: number;
-      NOMBRE: string;
-      ROL_ID: number | null;
-      ROL_NOMBRE: string | null;
-    }>(
-      `
-        SELECT
-          U.USU_ID_USUARIO      AS "ID",
-          U.USU_NOMBRE_COMPLETO AS "NOMBRE",
-          U.USU_ID_ROL          AS "ROL_ID",
-          R.ROL_NOMBRE_ROL      AS "ROL_NOMBRE"
-        FROM USUARIO U
-        LEFT JOIN ROL R
-          ON R.ROL_ID_ROL = U.USU_ID_ROL
-        WHERE U.USU_ACTIVO = 1
-          AND (R.ROL_ACTIVO = 1 OR R.ROL_ACTIVO IS NULL)
-        ORDER BY U.USU_ID_USUARIO
-      `,
-    );
-
-    const permisos: ActorProceso['permisos'] = [
-      'CREAR',
-      'APROBAR',
-      'TESORERIA',
-      'ANULAR',
-    ];
-
-    const rows = (result.rows ?? []).map(row => ({
-      id: Number(row.ID),
-      nombre: String(row.NOMBRE),
-      roles: row.ROL_ID == null ? [] : [Number(row.ROL_ID)],
-      permisos,
-      rolNombre: row.ROL_NOMBRE ?? 'Sin rol',
-    }));
-
     res.setHeader('Cache-Control', 'no-store');
-    res.json(rows);
+    res.json(await listarUsuariosOperativos());
   } catch (error) {
     next(error);
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch {
-        // La conexión ya pudo haber sido cerrada por Oracle.
-      }
-    }
   }
 });
 
 /**
- * A partir de aquí todas las acciones requieren el usuario seleccionado
- * mediante X-CXP-Actor-Id.
+ * A partir de aquí todas las acciones requieren el actor que resolvió
+ * resolverActor desde X-CXP-Actor-Id.
  */
-router.use(requireProcessActor);
+router.use(exigirActor);
 
 router.get('/opciones', async (req, res, next) => {
   try {
@@ -132,7 +82,7 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const process = await procesoStore.transaction(async tx => {
-      await tx.actorExists(res.locals.processActor);
+      await tx.actorExists(res.locals.cxpActor);
       return tx.get(id);
     });
 
@@ -153,7 +103,7 @@ router.get('/:id/cheques-disponibles', async (req, res, next) => {
     res.json(
       await workflow.cheques(
         id,
-        res.locals.processActor,
+        res.locals.cxpActor,
       ),
     );
   } catch (error) {
@@ -168,7 +118,7 @@ router.post('/', async (req, res, next) => {
       .json(
         await workflow.create(
           req.body,
-          res.locals.processActor,
+          res.locals.cxpActor,
         ),
       );
   } catch (error) {
@@ -188,7 +138,7 @@ router.post('/:id/acciones', async (req, res, next) => {
       await workflow.act(
         id,
         req.body,
-        res.locals.processActor,
+        res.locals.cxpActor,
       ),
     );
   } catch (error) {

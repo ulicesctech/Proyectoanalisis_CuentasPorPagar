@@ -5,7 +5,8 @@ import {
   CXP_SCHEMAS, getCxpEntity, prepareCxpRecord, validateCxpRecord,
   type CxpDocumento, type CxpRecord,
 } from '@erp/contracts';
-import { apiClient, ApiError } from '../../../shared/api';
+import { apiClient, ApiError } from '../api';
+import { getOperadorId } from '../operador/operador';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
@@ -97,7 +98,8 @@ function stepErrors(values: Values, step: number): Errors {
 export function CxpDocumentoRegistroPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const [values, setValues] = useState<Values>(initialValues);
+  // Se precarga con el usuario operativo: el servidor rechaza otro distinto.
+  const [values, setValues] = useState<Values>(() => ({ ...initialValues, creadoPor: getOperadorId() }));
   const [catalogLabels, setCatalogLabels] = useState({ idProveedor: '', idSucursal: '', creadoPor: '', idCondicionCredito: '' });
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);

@@ -3,6 +3,7 @@ import {
   cxpMoneySum,
   nuevaContrasenaSchema,
   type ActorProceso,
+  type AprobacionProceso,
   type CxpRecord,
   type PermisoProceso,
   type ProcesoPago,
@@ -18,6 +19,44 @@ function requireThat(test: unknown, message: string, status = 409): asserts test
 
 function permit(actor: ActorProceso, permission: PermisoProceso) {
   requireThat(actor.permisos.includes(permission), 'Tu usuario no tiene permiso para esta acción', 403);
+}
+
+/**
+ * Segregación de funciones en la aprobación RF10: un usuario decide como máximo una
+ * posición del mismo proceso, así una regla que pide N aprobadores requiere N personas
+ * distintas. Los roles no se usan por ahora: ID_ROL_APROBADOR se conserva como dato
+ * porque Oracle lo exige, pero no limita quién aprueba.
+ */
+export function assertApprovalSegregation(
+  process: Pick<ProcesoPago, 'aprobaciones'>,
+  approval: AprobacionProceso,
+  actor: ActorProceso,
+) {
+  requireThat(
+    !process.aprobaciones.some(item =>
+      item.id !== approval.id &&
+      ['APROBADA', 'RECHAZADA'].includes(item.decision) &&
+      Number(item.usuario) === actor.id),
+    'Ya registraste una decisión en este proceso; otra persona debe resolver esta aprobación',
+    403,
+  );
+}
+
+/**
+ * Las etapas de tesorería las realizan personas distintas, según las reglas de
+ * CXP_PAGO del contrato: programadoPor ≠ ejecutadoPor ≠ conciliadoPor.
+ */
+export function assertDistinctOperator(
+  payment: CxpRecord,
+  actor: ActorProceso,
+  previous: Array<'programadoPor' | 'ejecutadoPor'>,
+  message: string,
+) {
+  requireThat(
+    previous.every(field => payment[field] == null || Number(payment[field]) !== actor.id),
+    message,
+    403,
+  );
 }
 
 function totalOf(documents: CxpRecord[]) {
@@ -334,13 +373,12 @@ export function createPaymentWorkflow(store: ProcesoStore, clock = () => new Dat
           case 'aprobar':
           case 'rechazar': {
             permit(actor, 'APROBAR');
-            // Modo demostración: no se aplica segregación por rol ni por usuario.
-            // El mismo usuario puede crear, solicitar, aprobar y continuar el pago.
             requireThat(process.estado === 'EN_REVISION', 'El proceso no está en revisión');
             const approval = process.aprobaciones.find(item => item.id === action.idAprobacion);
             requireThat(approval && approval.decision === 'PENDIENTE', 'La aprobación ya fue resuelta o no corresponde');
             const pendingLevels = process.aprobaciones.filter(item => item.decision === 'PENDIENTE').map(item => item.nivel);
             requireThat(approval.nivel === Math.min(...pendingLevels), 'Completa primero los niveles anteriores');
+            assertApprovalSegregation(process, approval, actor);
 
             approval.usuario = actor.id;
             approval.decision = action.accion === 'aprobar' ? 'APROBADA' : 'RECHAZADA';
@@ -432,7 +470,6 @@ export function createPaymentWorkflow(store: ProcesoStore, clock = () => new Dat
 
           case 'entregar': {
             permit(actor, 'TESORERIA');
-            // Modo demostración: el mismo usuario puede programar y ejecutar.
             requireThat(
               process.estado === 'CHEQUE_EMITIDO' && (process.cheque || process.transferencia),
               'Primero genera el medio de pago en Bancos',
@@ -442,7 +479,9 @@ export function createPaymentWorkflow(store: ProcesoStore, clock = () => new Dat
             }
             requireExecutionDate(process);
             await fresh(tx, process);
-            await validatePersistedAccounts(tx, process);
+            const scheduledPayment = await validatePersistedAccounts(tx, process);
+            assertDistinctOperator(scheduledPayment, actor, ['programadoPor'],
+              'Quien programó el pago no puede ejecutarlo; otra persona de tesorería debe hacerlo');
             const advanced = await tx.bankAdvance(process, actor, 'EJECUTAR');
             process.cheque = advanced.cheque;
             process.transferencia = advanced.transferencia;
@@ -477,11 +516,12 @@ export function createPaymentWorkflow(store: ProcesoStore, clock = () => new Dat
 
           case 'cobrar': {
             permit(actor, 'TESORERIA');
-            // Modo demostración: el mismo usuario puede ejecutar y conciliar.
             requireThat(
               process.estado === 'ENTREGADO' && (process.cheque || process.transferencia),
               'El medio de pago debe estar ejecutado antes de finalizar',
             );
+            assertDistinctOperator(await tx.row('pagos', process.id), actor, ['programadoPor', 'ejecutadoPor'],
+              'Quien programó o ejecutó el pago no puede confirmarlo; otra persona de tesorería debe hacerlo');
             const advanced = await tx.bankAdvance(process, actor, 'CONFIRMAR');
             process.cheque = advanced.cheque;
             process.transferencia = advanced.transferencia;

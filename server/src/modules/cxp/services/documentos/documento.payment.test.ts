@@ -222,14 +222,14 @@ test('el CRUD de pagos no puede crear un pago confirmado ni promover un borrador
     codigoPago: 'P-3', fechaProgramada: '2026-10-05', montoObligacion: 420,
     concepto: 'Pago de factura', claveIdempotencia: 'P-3', programadoPor: 9,
     estado: 'CONFIRMADO', ejecutadoPor: 10, fechaPago: '2026-10-05T12:00:00',
-  }), { status: 409 });
+  }, 9), { status: 409 });
   db.rows.get('CXP_PAGO:2')!.ESTADO = 'BORRADOR';
-  await assert.rejects(service.update(2, { estado: 'CONFIRMADO' }), { status: 409 });
+  await assert.rejects(service.update(2, { estado: 'CONFIRMADO' }, 9), { status: 409 });
   await assert.rejects(service.create({
     idProveedor: 7, idSucursal: 1, idFormaPago: 1, idCuentaOrigen: 1, idCuentaDestino: 2,
     codigoPago: 'CP-00000003', fechaProgramada: '2026-10-05', montoObligacion: 420,
     concepto: 'Pago ordinario', claveIdempotencia: 'P-3', programadoPor: 9,
-  }), { status: 409 });
-  await assert.rejects(service.update(2, { codigoPago: 'CP-00000002' }), { status: 409 });
+  }, 9), { status: 409 });
+  await assert.rejects(service.update(2, { codigoPago: 'CP-00000002' }, 9), { status: 409 });
   assert.equal(db.writes.length, 0);
 });

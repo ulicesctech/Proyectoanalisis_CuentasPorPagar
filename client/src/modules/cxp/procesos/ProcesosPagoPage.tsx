@@ -25,6 +25,8 @@ import { apiRequest, ApiError } from '../../../shared/api';
 import { CxpLayout } from '../CxpLayout';
 
 import './procesos.css';
+import { impedimentoAprobacion, impedimentoCobro, impedimentoEntrega } from './segregacion';
+import { useOperadorId } from '../operador/operador';
 
 const titles: Record<ProcesoPago['estado'], string> = {
   EMITIDA: 'Contraseña emitida',
@@ -100,9 +102,8 @@ const flowGuide = [
   },
 ] as const;
 
-type UsuarioOperativo = ActorProceso & {
-  rolNombre: string;
-};
+// Los roles no se usan por ahora.
+type UsuarioOperativo = ActorProceso;
 
 function etapaActual(
   proceso: ProcesoPago | null,
@@ -255,9 +256,8 @@ export function ProcesosPagoPage({
   const [usuarios, setUsuarios] = useState<UsuarioOperativo[]>([]);
   const [actor, setActor] = useState<UsuarioOperativo | null>(null);
 
-  const [actorId, setActorId] = useState(
-    () => localStorage.getItem('cxp.actorId') ?? '',
-  );
+  // Usuario operativo compartido con la barra superior de CXP ("Operando como").
+  const [actorId, setActorId] = useOperadorId();
 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -406,8 +406,6 @@ export function ProcesosPagoPage({
         e instanceof ApiError &&
         e.status === 401
       ) {
-        localStorage.removeItem('cxp.actorId');
-
         setActorId('');
         setActor(null);
         setSelected(null);
@@ -528,39 +526,26 @@ export function ProcesosPagoPage({
 
   function cambiarActor(id: string) {
     setActorId(id);
+  }
 
+  // Cambiar de usuario (aquí o en la barra superior) limpia lo que dependía del anterior.
+  const actorAnterior = useRef(actorId);
+  useEffect(() => {
+    setActor(usuarios.find(item => String(item.id) === actorId) ?? null);
+    if (actorAnterior.current === actorId) return;
+    actorAnterior.current = actorId;
     setSelected(null);
     setChosen([]);
     setReason('');
     setReceiver('');
     setPaymentMethod('');
     setOverview([]);
-
     setList({
       data: [],
       page: 1,
       hasMore: false,
     });
-
-    if (!id) {
-      localStorage.removeItem('cxp.actorId');
-      setActor(null);
-      return;
-    }
-
-    localStorage.setItem(
-      'cxp.actorId',
-      id,
-    );
-
-    const usuario =
-      usuarios.find(
-        item =>
-          String(item.id) === id,
-      ) ?? null;
-
-    setActor(usuario);
-  }
+  }, [actorId, usuarios]);
 
   useEffect(() => {
     void run(cargarUsuarios, {
@@ -2067,6 +2052,11 @@ export function ProcesosPagoPage({
                               can(
                                 'APROBAR',
                               ) && (
+                                impedimentoAprobacion(selected, approval, actor) ? (
+                                  <span className="text-sm text-slate-500">
+                                    {impedimentoAprobacion(selected, approval, actor)}
+                                  </span>
+                                ) : (
                                 <>
 
                                   <Button
@@ -2118,6 +2108,7 @@ export function ProcesosPagoPage({
                                   </Button>
 
                                 </>
+                                )
                               )}
 
                           </div>
@@ -2263,7 +2254,9 @@ export function ProcesosPagoPage({
                       'CHEQUE_EMITIDO' &&
                     can(
                       'TESORERIA',
-                    ) && (
+                    ) && (impedimentoEntrega(selected, actor) ? (
+                      <span className="text-sm text-slate-500">{impedimentoEntrega(selected, actor)}</span>
+                    ) : (
                       <>
 
                         {processIsCheque && input(
@@ -2305,6 +2298,7 @@ export function ProcesosPagoPage({
                         </Button>
 
                       </>
+                    )
                     )}
 
                   {/* FINALIZAR / CONCILIAR */}
@@ -2315,7 +2309,9 @@ export function ProcesosPagoPage({
                       'ENTREGADO' &&
                     can(
                       'TESORERIA',
-                    ) && (
+                    ) && (impedimentoCobro(selected, actor) ? (
+                      <span className="text-sm text-slate-500">{impedimentoCobro(selected, actor)}</span>
+                    ) : (
 
                       <Button
                         disabled={
@@ -2335,6 +2331,7 @@ export function ProcesosPagoPage({
                           ? 'Confirmar cobro y finalizar'
                           : 'Confirmar transferencia y finalizar'}
                       </Button>
+                    )
 
                     )}
 

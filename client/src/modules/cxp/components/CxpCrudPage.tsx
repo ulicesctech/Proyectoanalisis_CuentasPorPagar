@@ -5,7 +5,7 @@ import { getCxpEntity, type CxpRecord, type CxpResource, type CxpFieldDefinition
 import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
 import { Modal } from '../../../shared/components';
 import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
-import { apiClient, ApiError } from '../../../shared/api';
+import { apiClient, ApiError } from '../api';
 import { CxpLayout } from '../CxpLayout';
 import { CxpBreadcrumb } from './CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';

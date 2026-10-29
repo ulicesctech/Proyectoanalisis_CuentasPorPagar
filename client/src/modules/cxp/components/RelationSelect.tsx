@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CxpOption } from '@erp/contracts';
-import { apiClient, buildQueryString } from '../../../shared/api';
+import { apiClient, buildQueryString } from '../api';
 import { TextInput } from '../../../shared/ui-kit';
 import { SearchableSelect } from './SearchableSelect';
 

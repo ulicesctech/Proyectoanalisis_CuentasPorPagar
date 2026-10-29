@@ -36,8 +36,9 @@ export function createUploadDteOperation(
   storage: DteStorage = createDteStorage(),
   connectionProvider: typeof getConnection = getConnection,
 ) {
-  return async (idDocumento: number, body: unknown, fileName: unknown, mimeType: unknown) => {
+  return async (idDocumento: number, body: unknown, fileName: unknown, mimeType: unknown, actorId: number) => {
     positiveId(idDocumento, 'Documento');
+    positiveId(actorId, 'Usuario operativo');
     const content = validateDteContent(body, fileName, mimeType);
     const progress: { storedUri: string | null; created: { idArchivo: number; nombreArchivo: string;
       tipoMime: string; tamanoBytes: number; hashSha256: string; versionArchivo: number } | null } = {
@@ -58,7 +59,7 @@ export function createUploadDteOperation(
         const idArchivo = await createDocumentoArchivo(connection, {
           idDocumento, nombreArchivo: content.fileName, tipoMime: content.mimeType,
           tamanoBytes: content.buffer.length, hashSha256: content.sha256,
-          uriAlmacenamiento: progress.storedUri, cargadoPor: Number(documento.creadoPor), versionArchivo,
+          uriAlmacenamiento: progress.storedUri, cargadoPor: actorId, versionArchivo,
         });
         progress.created = { idArchivo, nombreArchivo: content.fileName, tipoMime: content.mimeType,
           tamanoBytes: content.buffer.length, hashSha256: content.sha256, versionArchivo };

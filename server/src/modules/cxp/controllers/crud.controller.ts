@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { CxpListQuery } from '@erp/contracts';
 import type { CxpService } from '../services/crud.service';
 import { CxpError } from '../services/errors';
+import { requireActorId } from '../services/actorFields';
 
 export function cxpStringQuery(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -26,11 +27,11 @@ export function createCxpController(service: CxpService) {
       catch (error) { next(error); }
     },
     async create(req: Request, res: Response, next: NextFunction) {
-      try { res.status(201).json(await service.create(req.body)); }
+      try { res.status(201).json(await service.create(req.body, requireActorId(res))); }
       catch (error) { next(error); }
     },
     async update(req: Request, res: Response, next: NextFunction) {
-      try { res.json(await service.update(Number(req.params.id), req.body)); }
+      try { res.json(await service.update(Number(req.params.id), req.body, requireActorId(res))); }
       catch (error) { next(error); }
     },
     async remove(req: Request, res: Response, next: NextFunction) {

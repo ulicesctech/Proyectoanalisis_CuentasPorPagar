@@ -75,7 +75,7 @@ function memory(options: { insertFails?: boolean; commitFails?: boolean; committ
 
 test('carga PDF válido: el servidor calcula los metadatos y deja contenido descargable', async () => {
   const db = memory();
-  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, encodeURIComponent('Factura octubre.pdf'), 'application/pdf');
+  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, encodeURIComponent('Factura octubre.pdf'), 'application/pdf', 7);
   assert.equal(uploaded.nombreArchivo, 'Factura octubre.pdf');
   assert.equal(uploaded.tamanoBytes, pdf.length);
   assert.equal(uploaded.hashSha256, createHash('sha256').update(pdf).digest('hex'));
@@ -90,7 +90,7 @@ test('carga PDF válido: el servidor calcula los metadatos y deja contenido desc
 
 test('XML DTE bien formado se admite; extensión, MIME y contenido discordantes se rechazan sin escrituras', async () => {
   const db = memory();
-  await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, xml, 'dte.xml', 'application/xml');
+  await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, xml, 'dte.xml', 'application/xml', 7);
   assert.equal(db.files[0].TIPO_MIME, 'application/xml');
   for (const [body, name, mime] of [
     [Buffer.from('no es PDF'), 'f.pdf', 'application/pdf'],
@@ -100,7 +100,7 @@ test('XML DTE bien formado se admite; extensión, MIME y contenido discordantes 
     [pdf, 'f.exe', 'application/pdf'],
   ] as const) {
     const invalid = memory();
-    await assert.rejects(createUploadDteOperation(invalid.run, invalid.storage, invalid.connectionProvider)(4, body, name, mime));
+    await assert.rejects(createUploadDteOperation(invalid.run, invalid.storage, invalid.connectionProvider)(4, body, name, mime, 7));
     assert.deepEqual(invalid.writes, []);
     assert.equal(invalid.storageFiles.size, 0);
   }
@@ -130,7 +130,7 @@ test('un archivo de otro documento no se descarga ni se consulta por una ruta ma
 test('fallo de INSERT o COMMIT revierte metadatos y limpia el archivo físico', async () => {
   for (const options of [{ insertFails: true }, { commitFails: true }]) {
     const db = memory(options);
-    await assert.rejects(createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf'));
+    await assert.rejects(createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf', 7));
     assert.equal(db.files.length, 0);
     assert.equal(db.storageFiles.size, 0);
   }
@@ -138,7 +138,7 @@ test('fallo de INSERT o COMMIT revierte metadatos y limpia el archivo físico', 
 
 test('si Oracle confirmó el COMMIT aunque falle la respuesta, conserva contenido y metadatos', async () => {
   const db = memory({ committedResponseFails: true });
-  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf');
+  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf', 7);
   assert.equal(uploaded.idArchivo, db.files[0].ID_ARCHIVO);
   assert.equal(db.storageFiles.size, 1);
   assert.equal((await createReadDteOperations(db.connectionProvider, db.storage).list(4))[0].disponible, true);
@@ -146,12 +146,12 @@ test('si Oracle confirmó el COMMIT aunque falle la respuesta, conserva contenid
 
 test('documento no recibido y carga repetida no escriben ni reemplazan contenido', async () => {
   const approved = memory({ documentState: 'APROBADA' });
-  await assert.rejects(createUploadDteOperation(approved.run, approved.storage, approved.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf'), { status: 409 });
+  await assert.rejects(createUploadDteOperation(approved.run, approved.storage, approved.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf', 7), { status: 409 });
   assert.equal(approved.storageFiles.size, 0);
   const db = memory();
   const upload = createUploadDteOperation(db.run, db.storage, db.connectionProvider);
-  await upload(4, pdf, 'dte.pdf', 'application/pdf');
-  await assert.rejects(upload(4, pdf, 'dte.pdf', 'application/pdf'), { status: 409 });
+  await upload(4, pdf, 'dte.pdf', 'application/pdf', 7);
+  await assert.rejects(upload(4, pdf, 'dte.pdf', 'application/pdf', 7), { status: 409 });
   assert.equal(db.files.length, 1);
   assert.equal(db.storageFiles.size, 1);
 });
@@ -165,7 +165,7 @@ test('un expediente histórico sin contenido sigue consultable y admite adjuntar
   }] });
   const reads = createReadDteOperations(db.connectionProvider, db.storage);
   assert.equal((await reads.list(4))[0].disponible, false);
-  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'actual.pdf', 'application/pdf');
+  const uploaded = await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'actual.pdf', 'application/pdf', 7);
   assert.equal(uploaded.versionArchivo, 2);
   assert.equal(db.files[0].ES_VERSION_ACTUAL, 'N');
   assert.equal(db.files[1].ES_VERSION_ACTUAL, 'S');
@@ -176,12 +176,12 @@ test('los metadatos de un DTE no se crean con una URI enviada al CRUD común', a
   await assert.rejects(cxpArchivoService.create({
     idDocumento: 4, categoria: 'DTE', nombreArchivo: 'f.pdf', tipoMime: 'application/pdf',
     tamanoBytes: pdf.length, hashSha256: 'a'.repeat(64), uriAlmacenamiento: 'file:///tmp/f.pdf', cargadoPor: 7,
-  }), { status: 409 });
+  }, 7), { status: 409 });
 });
 
 test('el CRUD no elimina un documento con archivo asociado', async () => {
   const db = memory();
-  await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf');
+  await createUploadDteOperation(db.run, db.storage, db.connectionProvider)(4, pdf, 'dte.pdf', 'application/pdf', 7);
   await assert.rejects(createCxpService(cxpDocumentoRepository, db.run).remove(4), { status: 409 });
   assert.equal(db.files.length, 1);
   assert.equal(db.storageFiles.size, 1);

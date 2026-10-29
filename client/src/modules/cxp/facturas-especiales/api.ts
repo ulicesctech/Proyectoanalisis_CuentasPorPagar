@@ -1,7 +1,7 @@
 import type {
   CxpCalculoFacturaEspecial, CxpFacturaEspecialDetalle, CxpFacturaEspecialResumen, CxpReglaTributaria, PaginatedResponse,
 } from '@erp/contracts';
-import { API_BASE_URL, ApiError, apiClient, buildQueryString } from '../../../shared/api';
+import { API_BASE_URL, ApiError, apiClient, buildQueryString } from '../api';
 
 export type AccionFlujo = 'enviar-revision' | 'revisar' | 'devolver' | 'aprobar' | 'rechazar' | 'reabrir' | 'emitir' | 'anular';
 export interface ResultadoAccion { mensaje: string; factura: CxpFacturaEspecialDetalle }

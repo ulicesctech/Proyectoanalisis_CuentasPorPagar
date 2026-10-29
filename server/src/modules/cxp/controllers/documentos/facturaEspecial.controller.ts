@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { cxpStringQuery } from '../crud.controller';
+import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpFacturaEspecialService } from '../../services/documentos/facturaEspecial.service';
 
 type Accion = 'enviarRevision' | 'revisar' | 'devolver' | 'aprobar' | 'rechazar' | 'reabrir' | 'emitir' | 'anular';
@@ -20,16 +21,16 @@ export const cxpFacturaEspecialController = {
     catch (error) { next(error); }
   },
   async create(req: Request, res: Response, next: NextFunction) {
-    try { res.status(201).json(await cxpFacturaEspecialService.create(req.body)); }
+    try { res.status(201).json(await cxpFacturaEspecialService.create(withActorField(req.body, 'usuario', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   async update(req: Request, res: Response, next: NextFunction) {
-    try { res.json(await cxpFacturaEspecialService.update(Number(req.params.id), req.body)); }
+    try { res.json(await cxpFacturaEspecialService.update(Number(req.params.id), withActorField(req.body, 'usuario', requireActorId(res)))); }
     catch (error) { next(error); }
   },
   accion(nombre: Accion) {
     return async (req: Request, res: Response, next: NextFunction) => {
-      try { res.json(await cxpFacturaEspecialService[nombre](Number(req.params.id), req.body)); }
+      try { res.json(await cxpFacturaEspecialService[nombre](Number(req.params.id), withActorField(req.body, 'usuario', requireActorId(res)))); }
       catch (error) { next(error); }
     };
   },

@@ -32,12 +32,11 @@ export type DocumentoApprovalDecision = {
   observacion: string | null;
 };
 
+/** Los roles no se usan por ahora: el aprobador solo debe existir y estar activo. */
 export type ApprovalActor = {
   idUsuario: number;
   nombre: string | null;
-  idRol: number | null;
   usuarioActivo: boolean;
-  rolActivo: boolean;
 };
 
 function rule(row: OracleRow): DocumentoApprovalRule {
@@ -95,16 +94,14 @@ export async function listDocumentoApprovalDecisions(connection: Connection, idD
 
 export async function findApprovalActor(connection: Connection, idUsuario: number): Promise<ApprovalActor | null> {
   const result = await connection.execute<OracleRow>(
-    `SELECT U.USU_ID_USUARIO, U.USU_NOMBRE_COMPLETO, U.USU_ID_ROL, U.USU_ACTIVO, R.ROL_ACTIVO
+    `SELECT U.USU_ID_USUARIO, U.USU_NOMBRE_COMPLETO, U.USU_ACTIVO
        FROM USUARIO U
-       LEFT JOIN ROL R ON R.ROL_ID_ROL = U.USU_ID_ROL
       WHERE U.USU_ID_USUARIO = :idUsuario`, { idUsuario }, { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   const row = result.rows?.[0];
   return row ? {
     idUsuario: Number(row.USU_ID_USUARIO), nombre: row.USU_NOMBRE_COMPLETO == null ? null : String(row.USU_NOMBRE_COMPLETO),
-    idRol: row.USU_ID_ROL == null ? null : Number(row.USU_ID_ROL),
-    usuarioActivo: Number(row.USU_ACTIVO) === 1, rolActivo: Number(row.ROL_ACTIVO) === 1,
+    usuarioActivo: Number(row.USU_ACTIVO) === 1,
   } : null;
 }
 
