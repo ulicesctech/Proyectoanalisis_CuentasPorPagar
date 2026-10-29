@@ -3,6 +3,7 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import { cxpRoutes } from '../modules/cxp/routes';
+import { LoginPage, ChangePasswordPage } from '../modules/cxp/auth/AuthPages';
 
 // --- CXC / Organización ---
 import { OrganizacionLayout } from '../modules/cxc/organizacion/OrganizacionLayout';
@@ -35,6 +36,8 @@ import { FormasPagoPage } from '../modules/cxc/pagos/FormasPagoPage';
 
 export const routes: RouteObject[] = [
   { path: '/', element: <Navigate to="/cxp" replace /> },
+  { path: '/login', element: <LoginPage /> },
+  { path: '/change-password', element: <ChangePasswordPage /> },
 
   ...cxpRoutes,
 

@@ -153,7 +153,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     // La autoría (creado por, aplicado por, aprobador…) la registra el usuario operativo.
     const operador = Number(getOperadorId());
     if (!Number.isSafeInteger(operador) || operador <= 0) {
-      setFormError('Elige arriba con qué usuario estás operando ("Operando como") para poder guardar.');
+      setFormError('La sesión no tiene un usuario CXP activo. Vuelve a iniciar sesión.');
       return;
     }
     const authored = applyCxpActorFields(resource, operador, payload, editing ? record : null);

@@ -9,7 +9,7 @@ import { previewDocumentoDueDate } from '../../services/documentos/documento.due
 import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
 import { documentoPaymentOperations, listDocumentoEligiblePayments } from '../../services/documentos/documento.payment';
 import type { Request, Response, NextFunction } from 'express';
-import { actorForField, requireActorId, withActorField } from '../../services/actorFields';
+import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpActor } from '../../services/identidad';
 import { CxpError } from '../../services/errors';
 
@@ -35,13 +35,8 @@ export const cxpDocumentoController = {
   },
   async approval(req: Request, res: Response, next: NextFunction) {
     try {
-      // El contexto se calcula para el usuario operativo; actorId (si viene) debe coincidir.
       const actor = cxpActor(res);
-      const requested = cxpStringQuery(req, 'actorId');
-      if (requested !== undefined && requested !== '') {
-        if (!actor) throw new CxpError('Selecciona el usuario con el que estás operando', 401);
-        actorForField(requested, actor.id, 'actorId');
-      }
+      if (!actor) throw new CxpError('No hay usuario CXP activo en la sesión', 401);
       res.json(await readDocumentoApprovalContext(Number(req.params.id), actor?.id));
     } catch (error) { next(error); }
   },

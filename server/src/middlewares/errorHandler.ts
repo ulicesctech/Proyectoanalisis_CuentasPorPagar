@@ -31,7 +31,12 @@ export function errorHandler(
     return;
   }
 
-  console.error(err);
+  // Un error del parser JSON puede incluir err.body con una contraseña.
+  console.error('[ERP] Error interno', {
+    name: err?.name,
+    code: err?.code,
+    errorNum: err?.errorNum,
+  });
   res.status(500).json({
     error: 'Error interno del servidor'
   });

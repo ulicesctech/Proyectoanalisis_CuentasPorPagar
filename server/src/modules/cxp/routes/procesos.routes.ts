@@ -3,29 +3,18 @@ import { Router } from 'express';
 
 import { procesoStore } from '../repositories/proceso.repository';
 import { CxpError } from '../services/errors';
-import { exigirRolProceso, exigirListadoUsuarios, listarUsuariosOperativos } from '../services/identidad';
+import { exigirRolProceso } from '../services/identidad';
 import { createPaymentWorkflow } from '../services/procesos/workflow';
 
 const router = Router();
 const workflow = createPaymentWorkflow(procesoStore);
 
 /**
- * Lista de usuarios operativos para elegir "Operando como".
- * Va antes de exigirActor porque el usuario todavía no ha elegido identidad.
- * Solo existe en el modo de identidad provisional.
+ * Las rutas de procesos usan el actor fijado por la sesión CXP.
  */
-router.get('/usuarios-operativos', exigirListadoUsuarios, async (_req, res, next) => {
-  try {
-    res.setHeader('Cache-Control', 'no-store');
-    res.json(await listarUsuariosOperativos());
-  } catch (error) {
-    next(error);
-  }
-});
-
 /**
  * A partir de aquí las rutas requieren un actor con rol activo, como en Develop.
- * resolverActor lo obtiene desde X-CXP-Actor-Id.
+ * requireCxpSession lo obtiene desde la cuenta vinculada.
  */
 router.use(exigirRolProceso);
 

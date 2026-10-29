@@ -1,20 +1,22 @@
-import { useState, type ChangeEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Bell, Search } from 'lucide-react';
 import { useOperador } from '../operador/operador';
+import { useAuth } from '../auth/session';
 import { CXP_HOME_SECTIONS } from '../home/cxpHome.config';
 
 /**
  * Barra superior delgada (48px) con el buscador global, las notificaciones y el
- * selector "Operando como". El usuario elegido firma las operaciones de CXP
- * (identidad provisional, sin inicio de sesión).
+ * identidad de la sesión autenticada y cierre de sesión.
  */
 export function CxpTopBar({ searchQuery, onSearchChange }: {
   searchQuery?: string; onSearchChange?: (value: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const { actorId, actor, usuarios, loading, error, setActorId } = useOperador();
+  const { actor } = useOperador();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const results = CXP_HOME_SECTIONS.flatMap(section => section.cards).filter(card =>
     normalize(`${card.title} ${card.description}`).includes(normalize(query.trim())));
@@ -34,14 +36,8 @@ export function CxpTopBar({ searchQuery, onSearchChange }: {
           : <p role="status" className="p-2 text-sm text-slate-500">No se encontraron pantallas.</p>}
       </nav>}
     </div>
-    {error && <span className="hidden md:inline text-xs text-red-600" role="alert">{error}</span>}
-    {!error && !loading && !actor && <span className="hidden md:inline text-xs text-amber-700">Elige con qué usuario operas para poder guardar.</span>}
-    <select id="cxp-operando-como" aria-label="Operando como" value={actor ? actorId : ''} disabled={loading || !!error}
-      onChange={(event: ChangeEvent<HTMLSelectElement>) => setActorId(event.target.value)}
-      className="h-8 w-48 sm:w-64 px-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
-      <option value="">{loading ? 'Cargando usuarios…' : 'Operando como: seleccionar…'}</option>
-      {usuarios.map(usuario => <option key={usuario.id} value={String(usuario.id)}>{`Operando como: ${usuario.nombre}`}</option>)}
-    </select>
+    <span className="hidden sm:inline text-sm text-slate-700" aria-label="Usuario autenticado">{actor?.nombre} · {actor?.nombreRol ?? 'Rol activo'}</span>
+    <button type="button" className="text-sm text-blue-700 hover:underline" onClick={() => void logout().then(() => navigate('/login', { replace: true })).catch(() => {})}>Cerrar sesión</button>
     <button type="button" title="Notificaciones" aria-label="Notificaciones"
       className="relative p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
       <Bell size={18} />

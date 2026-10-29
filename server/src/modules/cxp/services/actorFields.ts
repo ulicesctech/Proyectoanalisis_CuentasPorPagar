@@ -3,12 +3,12 @@ import { applyCxpActorFields, type CxpRecord, type CxpResource } from '@erp/cont
 import { CxpError } from './errors';
 import { cxpActor } from './identidad';
 
-const MISMATCH = 'El usuario indicado no coincide con el usuario operativo';
+const MISMATCH = 'El usuario indicado no coincide con el usuario autenticado';
 
-/** Id del usuario operativo de la petición; las escrituras ya pasaron por exigirActor. */
+/** Id del usuario operativo vinculado a la sesión de la petición. */
 export function requireActorId(res: Response): number {
   const actor = cxpActor(res);
-  if (!actor) throw new CxpError('Selecciona el usuario con el que estás operando', 401);
+  if (!actor) throw new CxpError('No hay usuario CXP activo en la sesión', 401);
   return actor.id;
 }
 
@@ -25,7 +25,7 @@ export function resolveActorFields(resource: CxpResource, actorId: number, input
  */
 export function actorForField(value: unknown, actorId: number, campo: string): number {
   if (value !== undefined && value !== null && value !== '' && Number(value) !== actorId) {
-    throw new CxpError(MISMATCH, 403, [{ campo, mensaje: 'Debe ser el usuario operativo' }]);
+    throw new CxpError(MISMATCH, 403, [{ campo, mensaje: 'Debe ser el usuario autenticado' }]);
   }
   return actorId;
 }

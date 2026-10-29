@@ -2,6 +2,7 @@ import { ProcesosPagoPage } from './procesos/ProcesosPagoPage';
 // client/src/modules/cxp/routes.tsx
 import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../../layouts/MainLayout';
+import { RequireCxpSession } from './auth/AuthPages';
 import { CxpHomePage } from './home/CxpHomePage';
 
 // --- Configuración ---
@@ -98,5 +99,5 @@ const cxpPages: RouteObject[] = [
 ];
 export const cxpRoutes: RouteObject[] = cxpPages.map(route => ({
   ...route,
-  element: <MainLayout>{route.element}</MainLayout>,
+  element: <RequireCxpSession><MainLayout>{route.element}</MainLayout></RequireCxpSession>,
 }));

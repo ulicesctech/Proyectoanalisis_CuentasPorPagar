@@ -1,13 +1,5 @@
 import 'dotenv/config';
 
-/**
- * Modos de identidad de CXP. Solo existe el provisional: el usuario se declara con
- * X-CXP-Actor-Id y NO equivale a autenticación. Se agregará un modo con sesión
- * cuando el ERP defina el inicio de sesión.
- */
-export const CXP_AUTH_MODES = ['provisional'] as const;
-export type CxpAuthMode = (typeof CXP_AUTH_MODES)[number];
-
 const DEFAULT_CORS_ORIGINS = 'http://localhost:5173';
 const DEFAULT_HOST = '127.0.0.1';
 
@@ -24,15 +16,10 @@ export function parseCorsOrigins(raw: string | undefined): string[] {
   return values;
 }
 
-export function parseCxpAuthMode(raw: string | undefined, nodeEnv: string | undefined): CxpAuthMode {
-  const mode = (raw?.trim() || 'provisional') as CxpAuthMode;
-  if (!CXP_AUTH_MODES.includes(mode)) {
-    throw new Error(`CXP_AUTH_MODE "${raw}" no es válido. Modos disponibles: ${CXP_AUTH_MODES.join(', ')}`);
-  }
-  if (mode === 'provisional' && nodeEnv === 'production') {
-    throw new Error('CXP_AUTH_MODE=provisional no autentica usuarios y no puede usarse con NODE_ENV=production');
-  }
-  return mode;
+export function parsePositiveInteger(raw: string | undefined, fallback: number, name: string): number {
+  const value = raw === undefined || raw === '' ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} debe ser un entero positivo`);
+  return value;
 }
 
 export function parsePort(raw: string | undefined): number {
@@ -47,7 +34,15 @@ export const config = {
   /** 127.0.0.1 solo acepta conexiones del mismo equipo; usa 0.0.0.0 para la red local. */
   host: process.env.HOST?.trim() || DEFAULT_HOST,
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
-  cxpAuthMode: parseCxpAuthMode(process.env.CXP_AUTH_MODE, process.env.NODE_ENV),
+  auth: {
+    cookieSecure: process.env.AUTH_ALLOW_INSECURE_HTTP !== 'true',
+    idleMinutes: parsePositiveInteger(process.env.AUTH_IDLE_MINUTES, 30, 'AUTH_IDLE_MINUTES'),
+    absoluteHours: parsePositiveInteger(process.env.AUTH_ABSOLUTE_HOURS, 8, 'AUTH_ABSOLUTE_HOURS'),
+    maxFailures: parsePositiveInteger(process.env.AUTH_MAX_FAILURES, 5, 'AUTH_MAX_FAILURES'),
+    lockMinutes: parsePositiveInteger(process.env.AUTH_LOCK_MINUTES, 15, 'AUTH_LOCK_MINUTES'),
+    ipMaxAttempts: parsePositiveInteger(process.env.AUTH_IP_MAX_ATTEMPTS, 20, 'AUTH_IP_MAX_ATTEMPTS'),
+    ipWindowMinutes: parsePositiveInteger(process.env.AUTH_IP_WINDOW_MINUTES, 15, 'AUTH_IP_WINDOW_MINUTES'),
+  },
 
   oracleConnection: {
     user: process.env.NODE_ORACLEDB_USER || '',
@@ -55,3 +50,14 @@ export const config = {
     connectString: process.env.NODE_ORACLEDB_CONNECTIONSTRING || '',
   },
 };
+
+if (process.env.NODE_ENV === 'production' && !config.auth.cookieSecure) {
+  throw new Error('AUTH_ALLOW_INSECURE_HTTP no está permitido en producción');
+}
+if (process.env.CXP_AUTH_MODE && process.env.CXP_AUTH_MODE !== 'session') {
+  throw new Error('CXP_AUTH_MODE provisional fue retirado; CXP requiere sesiones');
+}
+if (!config.auth.cookieSecure && (
+  !['127.0.0.1', 'localhost'].includes(config.host) ||
+  config.corsOrigins.some(origin => !['localhost', '127.0.0.1'].includes(new URL(origin).hostname))
+)) throw new Error('AUTH_ALLOW_INSECURE_HTTP solo se permite con HOST y CORS_ORIGINS locales');

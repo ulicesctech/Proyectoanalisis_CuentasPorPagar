@@ -29,6 +29,7 @@ import { CxpButton as Button } from '../components/CxpButton';
 import './procesos.css';
 import { impedimentoAprobacion, impedimentoCobro, impedimentoEntrega } from './segregacion';
 import { useOperadorId } from '../operador/operador';
+import { useAuth } from '../auth/session';
 
 const titles: Record<ProcesoPago['estado'], string> = {
   EMITIDA: 'Contraseña emitida',
@@ -265,8 +266,9 @@ export function ProcesosPagoPage({
   const [usuarios, setUsuarios] = useState<UsuarioOperativo[]>([]);
   const [actor, setActor] = useState<UsuarioOperativo | null>(null);
 
-  // Usuario operativo compartido con la barra superior de CXP ("Operando como").
+  // Usuario autenticado compartido con las demás pantallas CXP.
   const [actorId, setActorId] = useOperadorId();
+  const { session } = useAuth();
 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -324,11 +326,7 @@ export function ProcesosPagoPage({
     day: '2-digit',
   }).format(new Date());
 
-  const headers = actorId
-    ? {
-        'X-CXP-Actor-Id': actorId,
-      }
-    : {};
+  const headers = {};
 
   const call = <T,>(
     path: string,
@@ -559,13 +557,7 @@ export function ProcesosPagoPage({
   }
 
   async function cargarUsuarios() {
-    const rows =
-      await apiRequest<UsuarioOperativo[]>(
-        '/cxp/procesos/usuarios-operativos',
-      );
-
-    // Develop requería un rol activo para entrar al proceso de pagos.
-    const elegibles = rows.filter(usuario => usuario.roles.length > 0);
+    const elegibles = session?.actor && session.actor.roles.length > 0 ? [session.actor] : [];
     setUsuarios(elegibles);
 
     if (!elegibles.length) {
@@ -581,11 +573,7 @@ export function ProcesosPagoPage({
     setActor(guardado ?? null);
   }
 
-  function cambiarActor(id: string) {
-    setActorId(id);
-  }
-
-  // Cambiar de usuario (aquí o en la barra superior) limpia lo que dependía del anterior.
+  // Si cambia la sesión, limpia los datos que pertenecían al usuario anterior.
   const actorAnterior = useRef(actorId);
   useEffect(() => {
     setActor(usuarios.find(item => String(item.id) === actorId) ?? null);
@@ -1387,11 +1375,7 @@ export function ProcesosPagoPage({
           </div>
           <div className="cxp-workspace-context">
             <div className="cxp-workspace-operator">
-              <Select label="Usuario operativo" value={actorId}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) => cambiarActor(event.target.value)}
-                disabled={busy || optionsLoading}
-                options={[{ value: '', label: 'Seleccionar usuario…' },
-                  ...usuarios.map(usuario => ({ value: String(usuario.id), label: usuario.nombre }))]} />
+              <p className="text-sm text-slate-700">Usuario autenticado: {actor?.nombre ?? 'Sin acceso CXP'} · {session?.actor?.nombreRol ?? 'Rol activo'}</p>
             </div>
             {actor && bandeja === 'contrasenas' && can('CREAR') && (
               <Button icon={Plus} onClick={() => { setCreateStep(0); setCreateOpen(true); }} disabled={busy}>
@@ -1612,7 +1596,7 @@ export function ProcesosPagoPage({
 
         {!actor ? (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            Seleccioná un usuario operativo para consultar y gestionar las solicitudes de pago.
+            Tu sesión no tiene un usuario CXP activo para gestionar pagos.
           </div>
         ) : (
           <>
