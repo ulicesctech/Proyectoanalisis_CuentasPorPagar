@@ -5,6 +5,7 @@ import {
   type CxpFacturaEspecialTributo, type CxpTributoCalculado,
 } from '@erp/contracts';
 import { getConnection } from '../../../../config/database';
+import { CxpError } from '../../services/errors';
 
 const OPTIONS = { outFormat: oracledb.OUT_FORMAT_OBJECT };
 type Row = Record<string, string | number | null>;
@@ -146,18 +147,42 @@ export function facturaEspecialTx(connection: Connection) {
       return siguiente;
     },
 
-    /**
-     * Autoriza por usuario (parámetro CXP_FE_APROBADOR activo), sin exigir rol.
-     * VALOR_TEXTO solo aporta el ID_ROL_APROBADOR que CXP_APROBACION exige como dato.
-     */
-    async aprobadorAutorizado(idUsuario: number): Promise<{ idRol: number | null } | null> {
-      const result = await connection.execute<{ ROL: string | null }>(
-        `SELECT VALOR_TEXTO AS ROL FROM CXP_PARAMETRO
-          WHERE GRUPO_PARAMETRO = 'CXP_FE_APROBADOR' AND VALOR_NUMERO = :idUsuario AND ACTIVO = 'S'
-          FETCH FIRST 1 ROWS ONLY`, { idUsuario }, OPTIONS);
-      if (!result.rows?.length) return null;
-      const rol = Number(result.rows[0].ROL);
-      return { idRol: Number.isSafeInteger(rol) && rol > 0 ? rol : null };
+    /** El grupo antiguo CXP_FE_APROBADOR mantiene VALOR_NUMERO como ID de usuario. */
+    async aprobadorAutorizado(idUsuario: number): Promise<{ idRol: number } | null> {
+      const result = await connection.execute<{
+        ID_ROL_CONFIG: number | null; TEXTO_CONFIG: string | null;
+        NOMBRE_ROL_CONFIG: string | null; ACTIVO_ROL_CONFIG: number | null;
+        ID_ROL_USUARIO: number | null; ACTIVO_USUARIO: number | null; ACTIVO_ROL_USUARIO: number | null;
+      }>(
+        `SELECT P.VALOR_NUMERO AS ID_ROL_CONFIG, P.VALOR_TEXTO AS TEXTO_CONFIG,
+                RC.ROL_NOMBRE_ROL AS NOMBRE_ROL_CONFIG, RC.ROL_ACTIVO AS ACTIVO_ROL_CONFIG,
+                U.USU_ID_ROL AS ID_ROL_USUARIO, U.USU_ACTIVO AS ACTIVO_USUARIO,
+                RU.ROL_ACTIVO AS ACTIVO_ROL_USUARIO
+           FROM CXP_PARAMETRO P
+           LEFT JOIN ROL RC ON RC.ROL_ID_ROL = P.VALOR_NUMERO
+           LEFT JOIN USUARIO U ON U.USU_ID_USUARIO = :idUsuario
+           LEFT JOIN ROL RU ON RU.ROL_ID_ROL = U.USU_ID_ROL
+          WHERE P.GRUPO_PARAMETRO = 'CXP_FE_APROBADOR_ROL'
+            AND P.CODIGO = 'ROL_APROBADOR' AND P.ACTIVO = 'S'`,
+        { idUsuario }, OPTIONS);
+      const rows = result.rows ?? [];
+      if (rows.length !== 1) throw new CxpError('Configura exactamente un parámetro activo CXP_FE_APROBADOR_ROL/ROL_APROBADOR; el grupo CXP_FE_APROBADOR antiguo identifica usuarios y no se convierte automáticamente.', 409);
+      const row = rows[0];
+      const idRol = Number(row.ID_ROL_CONFIG);
+      if (!Number.isSafeInteger(idRol) || idRol <= 0 || row.TEXTO_CONFIG != null ||
+          row.ACTIVO_ROL_CONFIG !== 1 || !row.NOMBRE_ROL_CONFIG?.trim()) {
+        throw new CxpError('CXP_FE_APROBADOR_ROL/ROL_APROBADOR debe contener solo el ID de un rol activo con ROL_NOMBRE_ROL válido en VALOR_NUMERO.', 409);
+      }
+      const matches = await connection.execute<{ TOTAL: number }>(
+        `SELECT COUNT(*) AS TOTAL FROM ROL
+          WHERE REGEXP_REPLACE(UPPER(ROL_NOMBRE_ROL), '[[:space:]]', '') =
+                REGEXP_REPLACE(UPPER(:nombre), '[[:space:]]', '')`,
+        { nombre: row.NOMBRE_ROL_CONFIG }, OPTIONS);
+      if (Number(matches.rows?.[0]?.TOTAL) !== 1) {
+        throw new CxpError(`El nombre del rol configurado (${row.NOMBRE_ROL_CONFIG.trim()}) es ambiguo en ROL; revisa nombres nulos, espacios y mayúsculas.`, 409);
+      }
+      if (row.ACTIVO_USUARIO !== 1 || row.ACTIVO_ROL_USUARIO !== 1 || Number(row.ID_ROL_USUARIO) !== idRol) return null;
+      return { idRol: Number(row.ID_ROL_USUARIO) };
     },
 
     async insertExtension(data: { idDocumento: number; proveedorNombre: string; proveedorNit: string | null; proveedorCui: string | null;

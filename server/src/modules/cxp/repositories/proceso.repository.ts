@@ -80,20 +80,54 @@ function parseEventResult(raw: string | null | undefined): Record<string, unknow
   }
 }
 
-async function period(connection: Connection, branch: number, date: string) {
-  const result = await connection.execute<{ ESTADO: string }>(
-    `SELECT ESTADO
-       FROM CXP_PERIODO
-      WHERE ID_SUCURSAL = :branch
-        AND FECHA_INICIO <= TO_DATE(:day, 'YYYY-MM-DD')
-        AND FECHA_FIN >= TO_DATE(:day, 'YYYY-MM-DD')
-      FOR UPDATE`,
-    { branch, day: date },
-    object,
-  );
+export async function requireOpenPaymentPeriod(connection: Connection, branch: number, date: string) {
+  let rows: Array<{ ID_PERIODO: number; ESTADO: string }>;
+  try {
+    const result = await connection.execute<{ ID_PERIODO: number; ESTADO: string }>(
+      `SELECT ID_PERIODO, ESTADO
+         FROM CXP_PERIODO
+        WHERE ID_SUCURSAL = :branch
+          AND FECHA_INICIO <= TO_DATE(:day, 'YYYY-MM-DD')
+          AND FECHA_FIN >= TO_DATE(:day, 'YYYY-MM-DD')
+        FOR UPDATE`,
+      { branch, day: date },
+      object,
+    );
+    rows = result.rows ?? [];
+  } catch {
+    throw new CxpError('No se pudo consultar el período de la sucursal. Intenta nuevamente.', 503);
+  }
 
-  if (result.rows?.length !== 1 || !['ABIERTO', 'REABIERTO'].includes(result.rows[0].ESTADO)) {
-    throw new CxpError('Debe existir exactamente un período abierto para la sucursal y fecha de la operación', 409);
+  if (rows.length === 0) {
+    let hasBranchPeriod: boolean;
+    try {
+      const result = await connection.execute<{ ID_PERIODO: number }>(
+        `SELECT ID_PERIODO FROM CXP_PERIODO
+          WHERE ID_SUCURSAL = :branch
+          FETCH FIRST 1 ROW ONLY`,
+        { branch },
+        object,
+      );
+      hasBranchPeriod = (result.rows?.length ?? 0) > 0;
+    } catch {
+      throw new CxpError('No se pudo consultar el período de la sucursal. Intenta nuevamente.', 503);
+    }
+    throw new CxpError(hasBranchPeriod
+      ? `Los períodos de la sucursal #${branch} no cubren la fecha prevista de pago ${date}.`
+      : `No existe un período para la sucursal #${branch}.`, 409);
+  }
+  if (rows.length > 1) {
+    const ids = rows.map(row => row.ID_PERIODO).sort((a, b) => a - b);
+    throw new CxpError(
+      `Hay ${rows.length} períodos superpuestos para la sucursal #${branch} y la fecha prevista de pago ${date} (IDs ${ids.map(id => `#${id}`).join(', ')}). Debe haber exactamente uno.`,
+      409,
+    );
+  }
+  if (!['ABIERTO', 'REABIERTO'].includes(rows[0].ESTADO)) {
+    throw new CxpError(
+      `El período #${rows[0].ID_PERIODO} de la sucursal #${branch} está en estado ${rows[0].ESTADO}; debe estar ABIERTO o REABIERTO.`,
+      409,
+    );
   }
 }
 
@@ -557,7 +591,7 @@ function bind(connection: Connection): ProcesoTx {
       return rows;
     },
 
-    openPeriod: (branch, date) => period(connection, branch, date),
+    openPeriod: (branch, date) => requireOpenPaymentPeriod(connection, branch, date),
 
     async actorExists(actor) {
       const result = await connection.execute(

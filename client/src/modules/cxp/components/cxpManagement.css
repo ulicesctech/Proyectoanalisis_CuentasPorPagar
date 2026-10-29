@@ -1,0 +1,89 @@
+/* Estilo exclusivo de Control y Conciliaciones. No modifica las vistas de Pagos. */
+.cxp-management-page { width: 100%; min-width: 0; display: grid; gap: 20px; }
+.cxp-management-header {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 20px; padding: 22px 24px; background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 12px; box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+.cxp-management-heading { flex: 1 1 280px; min-width: 0; }
+.cxp-management-heading h1 { margin: 8px 0 6px; font-size: 24px; line-height: 1.25; font-weight: 700; color: #0f172a; }
+.cxp-management-eyebrow { margin: 0 0 6px; color: #64748b; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.cxp-management-description { margin: 0; color: #64748b; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.cxp-management-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cxp-management-breadcrumb { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #64748b; }
+.cxp-management-breadcrumb a { color: #2563eb; }
+.cxp-management-breadcrumb a:hover { text-decoration: underline; }
+.cxp-management-filters { min-width: 0; padding: 18px 20px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+.cxp-management-filter-grid { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(160px, 220px) minmax(180px, 260px); gap: 16px; align-items: start; }
+.cxp-management-filter-grid > * { min-width: 0; max-width: 100%; }
+.cxp-management-search { min-width: 0; }
+.cxp-management-filter-footer, .cxp-management-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.cxp-management-filter-footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f1f5f9; }
+.cxp-management-filter-footer p, .cxp-management-pagination > span { margin: 0; color: #64748b; font-size: 13px; }
+.cxp-management-filter-actions, .cxp-management-row-actions, .cxp-management-pagination > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cxp-management-table { width: 100%; min-width: 0; }
+.cxp-management-table > div { overscroll-behavior-x: contain; }
+.cxp-management-table table { min-width: 1020px; }
+.cxp-management-table th, .cxp-management-table td { padding: 13px 14px; }
+.cxp-management-row-actions { justify-content: flex-end; flex-wrap: nowrap; gap: 6px; }
+.cxp-management-notice { margin: 0; padding: 12px 16px; border: 1px solid #a7f3d0; border-radius: 8px; background: #ecfdf5; color: #065f46; font-size: 14px; }
+.cxp-management-error { border-color: #fecaca; color: #991b1b; background: #fef2f2; }
+.cxp-management-backdrop { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(15 23 42 / 45%); backdrop-filter: blur(2px); }
+.cxp-management-dialog { display: flex; flex-direction: column; width: min(100%, 1020px); max-height: calc(100dvh - 48px); min-width: 0; border: 1px solid #e2e8f0; border-top: 3px solid #2563eb; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgb(15 23 42 / 18%); overflow: hidden; outline: none; }
+.cxp-management-dialog--sm { max-width: 500px; }
+.cxp-management-dialog--md { max-width: 720px; }
+.cxp-management-dialog-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; flex: 0 0 auto; padding: 20px 24px; border-bottom: 1px solid #e2e8f0; }
+.cxp-management-dialog-header > div { flex: 1 1 240px; min-width: 0; }
+.cxp-management-dialog-header h2 { margin: 0; font-size: 20px; line-height: 1.35; font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
+.cxp-management-dialog-body { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding: 20px 24px; }
+.cxp-management-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cxp-management-option.cxp-button { width: 100%; height: auto; min-height: 104px; justify-content: flex-start; padding: 16px; text-align: left; white-space: normal; }
+.cxp-management-option > span { display: grid; gap: 6px; }
+.cxp-management-option strong { font-size: 14px; color: #0f172a; }
+.cxp-management-option small { display: block; font-size: 13px; font-weight: 400; color: #64748b; line-height: 1.5; }
+.cxp-management-form { display: grid; gap: 20px; min-width: 0; }
+.cxp-management-step { display: grid; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.cxp-management-step-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; }
+.cxp-management-step h3 { margin: 4px 0 0; color: #0f172a; font-size: 16px; font-weight: 600; }
+.cxp-management-step-selector { width: min(100%, 240px); }
+.cxp-management-step progress { display: block; width: 100%; height: 4px; border: 0; border-radius: 8px; background: #e2e8f0; color: #2563eb; accent-color: #2563eb; }
+.cxp-management-step progress::-webkit-progress-bar { border-radius: 8px; background: #e2e8f0; }
+.cxp-management-step progress::-webkit-progress-value { border-radius: 8px; background: #2563eb; }
+.cxp-management-step progress::-moz-progress-bar { border-radius: 8px; background: #2563eb; }
+.cxp-management-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; align-items: start; min-width: 0; }
+.cxp-management-field { min-width: 0; width: 100%; }
+.cxp-management-field--number { max-width: 16rem; }
+.cxp-management-field--date { max-width: 14rem; }
+.cxp-management-field--datetime { max-width: 22rem; }
+.cxp-management-field--text { max-width: 34rem; }
+.cxp-management-field--textarea { grid-column: 1 / -1; }
+.cxp-management-form input, .cxp-management-form textarea, .cxp-management-form select { min-width: 0; max-width: 100%; }
+.cxp-management-form input, .cxp-management-form select { height: 40px; }
+.cxp-management-form label { line-height: 1.5; }
+.cxp-management-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid #e2e8f0; background: #fff; }
+.cxp-management-form-footer > span { color: #64748b; font-size: 12px; }
+.cxp-management-form-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.cxp-management-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+@media (max-width: 1100px) {
+  .cxp-management-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cxp-management-search { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .cxp-management-header { padding: 18px 16px; gap: 16px; }
+  .cxp-management-heading h1 { font-size: 22px; }
+  .cxp-management-header-actions { width: 100%; }
+  .cxp-management-header-actions > button { flex: 1 1 auto; }
+  .cxp-management-filters { padding: 16px; }
+  .cxp-management-filter-grid { grid-template-columns: minmax(0, 1fr); }
+  .cxp-management-filter-footer, .cxp-management-filter-actions { width: 100%; }
+  .cxp-management-filter-actions { justify-content: flex-end; }
+  .cxp-management-backdrop { padding: 8px; }
+  .cxp-management-dialog { max-height: calc(100dvh - 16px); }
+  .cxp-management-dialog-header { padding: 16px; gap: 12px; }
+  .cxp-management-dialog-header > div { flex-basis: 180px; }
+  .cxp-management-dialog-body { padding: 16px; }
+  .cxp-management-options, .cxp-management-fields { grid-template-columns: minmax(0, 1fr); }
+  .cxp-management-field--textarea { grid-column: auto; }
+  .cxp-management-form-actions { width: 100%; }
+  .cxp-management-step-selector { width: 100%; }
+}

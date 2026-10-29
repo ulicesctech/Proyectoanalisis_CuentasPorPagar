@@ -3,7 +3,7 @@ import { Router } from 'express';
 
 import { procesoStore } from '../repositories/proceso.repository';
 import { CxpError } from '../services/errors';
-import { exigirActor, exigirListadoUsuarios, listarUsuariosOperativos } from '../services/identidad';
+import { exigirRolProceso, exigirListadoUsuarios, listarUsuariosOperativos } from '../services/identidad';
 import { createPaymentWorkflow } from '../services/procesos/workflow';
 
 const router = Router();
@@ -24,10 +24,10 @@ router.get('/usuarios-operativos', exigirListadoUsuarios, async (_req, res, next
 });
 
 /**
- * A partir de aquí todas las acciones requieren el actor que resolvió
- * resolverActor desde X-CXP-Actor-Id.
+ * A partir de aquí las rutas requieren un actor con rol activo, como en Develop.
+ * resolverActor lo obtiene desde X-CXP-Actor-Id.
  */
-router.use(exigirActor);
+router.use(exigirRolProceso);
 
 router.get('/opciones', async (req, res, next) => {
   try {

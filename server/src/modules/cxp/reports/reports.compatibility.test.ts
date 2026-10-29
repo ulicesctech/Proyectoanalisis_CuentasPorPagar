@@ -43,6 +43,12 @@ test('antigüedad usa aplicaciones vigentes al corte y conserva saldos históric
   assert.equal((await generarPdfAntiguedad(result)).subarray(0, 4).toString(), '%PDF');
 });
 
+test('el filtro NO VENCIDO excluye documentos sin fecha de vencimiento', async () => {
+  const db = fakeConnection([[]]);
+  await consultarAntiguedad({ fechaCorte: '2026-09-30', rangoAntiguedad: 'NO VENCIDO' }, db.factory);
+  assert.match(db.sql[0], /d\.FECHA_VENCIMIENTO IS NOT NULL\s+AND TRUNC\(TO_DATE\(:fechaCorte/);
+});
+
 test('RF21 limita el detalle a retenciones no anuladas de documentos vigentes', async () => {
   const db = fakeConnection([[]]);
   const result = await consultarRetenciones({ fechaInicio: '2026-09-01', fechaFin: '2026-09-30' }, db.factory);

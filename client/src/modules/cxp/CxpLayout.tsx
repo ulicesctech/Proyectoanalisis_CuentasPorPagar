@@ -5,6 +5,7 @@ import { Select, Sidebar } from '../../shared/ui-kit';
 import { CxpTopBar } from './components/CxpTopBar';
 import { useOperador } from './operador/operador';
 import './cxp.css';
+const SHOW_SECTION_NAVIGATION = false;
 
 /** Grupos cuyas pantallas se abren desde la página de inicio /cxp y no muestran sub-pestañas. */
 const HOME_GROUPS = ['Configuración'];
@@ -30,8 +31,9 @@ const screens = [
 ];
 
 /** Sin resource ni screen se renderiza como página de inicio (sin sub-pestañas). */
-export function CxpLayout({ resource, screen, children, bandeja }: {
+export function CxpLayout({ resource, screen, children, bandeja, searchQuery, onSearchChange }: {
   resource?: CxpResource; screen?: CxpScreen; children: ReactNode; bandeja?: BandejaProceso;
+  searchQuery?: string; onSearchChange?: (value: string) => void;
 }) {
   const navigate = useNavigate();
   const { actor } = useOperador();
@@ -50,21 +52,23 @@ export function CxpLayout({ resource, screen, children, bandeja }: {
       ...screens.filter(item => item.group === 'Pagos' && item.path !== 'pagos'),
     ]
     : screens.filter(item => item.group === group);
-  return <div className="cxp-shell flex h-screen w-screen overflow-hidden bg-slate-50">
+  return <div className={`cxp-shell ${group === 'Pagos' ? 'cxp-payments-shell' : ''} flex h-screen w-screen overflow-hidden bg-slate-50`}>
     <Sidebar activeModule="cuentas_pagar" user={sidebarUser}
       onSelectModule={(module: string) => navigate(module === 'cuentas_pagar' ? '/cxp' : module === 'cuentas_cobrar' ? '/cxc/organizacion/empresas' : '/')} />
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <CxpTopBar />
+      <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} />
       <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-        {navigation.length > 0 && <>
-          <div className="cxp-mobile-navigation mb-4"><Select label="Pantalla" value={active}
-            options={navigation.map(item => ({ value: item.path, label: item.title }))}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => navigate(`/cxp/${event.target.value}`)} /></div>
-          <div className="flex flex-wrap gap-2 mb-6" aria-label="Pantallas de cuentas por pagar">
+        {SHOW_SECTION_NAVIGATION && navigation.length > 0 && <>
+          {group !== 'Pagos' && <div className="cxp-mobile-navigation mb-4">
+            <Select label="Pantalla" value={active}
+              options={navigation.map(item => ({ value: item.path, label: item.title }))}
+              onChange={(event: React.ChangeEvent<HTMLSelectElement>) => navigate(`/cxp/${event.target.value}`)} />
+          </div>}
+          {group !== 'Pagos' && <div className="flex flex-wrap gap-2 mb-6" aria-label="Pantallas de cuentas por pagar">
             {navigation.map(item => <Link key={item.path} to={`/cxp/${item.path}`}
               aria-current={active === item.path ? 'page' : undefined}
               className={`px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors ${active === item.path ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>{item.title}</Link>)}
-          </div>
+          </div>}
         </>}
         {children}
       </main>

@@ -109,7 +109,7 @@ export function SearchableSelect({
   };
 
   return <div ref={wrapper} onBlur={onBlur} className="relative w-full min-w-0 flex flex-col gap-1.5">
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2">
       <label htmlFor={baseId} className="text-xs font-semibold text-slate-700 flex items-center">
         {label}{required && <span className="text-red-500 ml-0.5" title="Campo requerido">*</span>}
       </label>

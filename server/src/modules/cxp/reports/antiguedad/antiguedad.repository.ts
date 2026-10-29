@@ -80,8 +80,8 @@ if (filters.rangoAntiguedad) {
     case 'NO VENCIDO':
       conditions.push(`
         (
-          d.FECHA_VENCIMIENTO IS NULL
-          OR TRUNC(TO_DATE(:fechaCorte, 'YYYY-MM-DD'))
+          d.FECHA_VENCIMIENTO IS NOT NULL
+          AND TRUNC(TO_DATE(:fechaCorte, 'YYYY-MM-DD'))
              <= TRUNC(d.FECHA_VENCIMIENTO)
         )
       `);

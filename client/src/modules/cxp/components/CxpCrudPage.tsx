@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Eye, Pencil, Plus, RefreshCw, Search, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Eye, LayoutGrid, Pencil, Plus, RefreshCw, Search, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getCxpEntity, type CxpRecord, type CxpResource, type CxpFieldDefinition } from '@erp/contracts';
 import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
 import { Modal } from '../../../shared/components';
@@ -11,6 +11,8 @@ import { CxpBreadcrumb } from './CxpBreadcrumb';
 import { useCxpList } from '../hooks/useCxpList';
 import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 import type { CxpFormProps } from './CxpEntityForm';
+import { CxpButton, type CxpButtonProps } from './CxpButton';
+import { CXP_MANAGEMENT_VIEWS, CxpManagementDialog, isCxpManagementResource } from './CxpManagementUI';
 
 const badges = (value: string) => ['ACTIVA', 'ACTIVO', 'S', 'APROBADA', 'APROBADO', 'PAGADA', 'APLICADA', 'CONFIRMADO', 'CONCILIADA'].includes(value)
   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -32,6 +34,13 @@ function display(field: CxpFieldDefinition, value: CxpRecord[string]) {
 
 export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: ComponentType<CxpFormProps> }) {
   const entity = getCxpEntity(resource)!;
+  const management = isCxpManagementResource(resource);
+  const presentation = CXP_MANAGEMENT_VIEWS.find(view => view.resource === resource);
+  const navigate = useNavigate();
+  const PageButton: ComponentType<CxpButtonProps> = management ? CxpButton : Button;
+  const RecordModal = management ? CxpManagementDialog : Modal;
+  const [showViews, setShowViews] = useState(false);
+  const [formBusy, setFormBusy] = useState(false);
   const [params, setParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
@@ -66,6 +75,11 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     setParams(next);
     setPage(1);
   };
+  const resetFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    updateFilter('', '');
+  };
   const open = async (row: CxpRecord, mode: 'edit' | 'view') => {
     setLoadingRecord(true);
     setActionError(null);
@@ -74,6 +88,7 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     finally { setLoadingRecord(false); }
   };
   const close = () => {
+    setFormBusy(false);
     setModal(null);
     if (params.has('registro')) { const next = new URLSearchParams(params); next.delete('registro'); setParams(next, { replace: true }); }
   };
@@ -106,20 +121,33 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     return links;
   };
 
-  return <CxpLayout resource={resource}>
-    <div className="space-y-5">
+  return <CxpLayout resource={resource} searchQuery={searchInput} onSearchChange={setSearchInput}>
+    <div className={management ? 'cxp-management-page' : 'space-y-5'}>
       {parentDocumento && <Link to={`/cxp/documentos/${parentDocumento}`}
         className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-800">← Volver al expediente · Documento #{parentDocumento}</Link>}
-      <div className="flex flex-wrap justify-between items-start gap-4">
+      {management ? <header className="cxp-management-header">
+        <div className="cxp-management-heading">
+          <nav className="cxp-management-breadcrumb" aria-label="Ruta de navegación">
+            <Link to="/cxp">Cuentas por Pagar</Link><span aria-hidden="true">/</span>
+            <span>{entity.group}</span><span aria-hidden="true">/</span><span aria-current="page">{entity.title}</span>
+          </nav>
+          <h1>{entity.title}</h1><p className="cxp-management-description">{presentation?.description}</p>
+        </div>
+        <div className="cxp-management-header-actions">
+          <PageButton icon={ArrowLeft} variant="ghost" onClick={() => navigate('/cxp')}>Volver al inicio</PageButton>
+          <PageButton icon={LayoutGrid} variant="secondary" onClick={() => setShowViews(true)}>Otras vistas</PageButton>
+          <PageButton icon={Plus} onClick={() => { setActionError(null); setNotice(null); setModal({ mode: 'create' }); }}>Nuevo registro</PageButton>
+        </div>
+      </header> : <div className="flex flex-wrap justify-between items-start gap-4">
         <div><CxpBreadcrumb group={entity.group} current={entity.title} />
           <h1 className="text-2xl font-bold text-slate-900">{entity.title}</h1>
           <p className="text-sm text-slate-500 mt-1">{parentDocumento ? `Trabajando en el documento #${parentDocumento}.` : resource === 'archivos' ? 'Registra los datos y la ubicación de tus archivos y evidencias.' : `Consulta y administra ${entity.title.toLowerCase()}.`}</p></div>
         <Button icon={Plus} onClick={() => { setActionError(null); setNotice(null); setModal({ mode: 'create' }); }}>Nuevo registro</Button>
-      </div>
-      <div className="bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <TextInput id="cxp-search" icon={Search} label="Buscar" placeholder="Buscar por ID, código o descripción…" value={searchInput}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} className="flex-1 min-w-56" />
+      </div>}
+      <section className={management ? 'cxp-management-filters' : 'bg-white border border-slate-200 rounded-xl p-4'} aria-label={`Filtros de ${entity.title.toLowerCase()}`}>
+        <div className={management ? 'cxp-management-filter-grid' : 'flex flex-wrap items-end gap-3'}>
+          <TextInput id="cxp-search" icon={management ? undefined : Search} label="Buscar" placeholder="Buscar por ID, código o descripción…" value={searchInput}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} className={management ? 'cxp-management-search' : 'flex-1 min-w-56'} />
           {!parentDocumento && <Select id="cxp-filter-field" label="Filtrar por" value={filterField} placeholder="" className="sm:max-w-56"
             options={[{ value: '', label: 'Sin filtro' }, ...entity.fields.filter(field => field.lookup || field.options).map(field => ({ value: field.name, label: field.label }))]}
             onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(event.target.value, '')} />}
@@ -128,13 +156,20 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
           {!parentDocumento && filterDefinition?.options && <Select id="cxp-filter-value" label={filterDefinition.label} value={filterValue} placeholder="" className="sm:max-w-56"
             options={[{ value: '', label: 'Todos' }, ...filterDefinition.options.map(value => ({ value, label: value.replace(/_/g, ' ') }))]}
             onChange={(event: React.ChangeEvent<HTMLSelectElement>) => updateFilter(filterField, event.target.value)} />}
-          <Button icon={RefreshCw} variant="secondary" onClick={() => { clearCxpCatalogCache(); refetch(); }} disabled={isLoading}>Actualizar</Button>
+          {!management && <Button icon={RefreshCw} variant="secondary" onClick={() => { clearCxpCatalogCache(); refetch(); }} disabled={isLoading}>Actualizar</Button>}
         </div>
-      </div>
+        {management && <div className="cxp-management-filter-footer">
+          <p aria-live="polite">{isLoading ? 'Consultando registros…' : error ? 'Información no disponible' : `${meta.total} registros encontrados`}</p>
+          <div className="cxp-management-filter-actions">
+            <PageButton icon={X} variant="ghost" disabled={!searchInput && !filterField && !filterValue} onClick={resetFilters}>Limpiar filtros</PageButton>
+            <PageButton icon={RefreshCw} variant="secondary" disabled={isLoading} onClick={() => { clearCxpCatalogCache(); refetch(); }}>Actualizar</PageButton>
+          </div>
+        </div>}
+      </section>
       {(error || actionError) && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{actionError || error}</p>}
       {notice && !actionError && <p role="status" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm rounded-lg p-3">{notice}</p>}
       {loadingRecord && <p role="status" className="text-sm text-slate-500">Abriendo registro…</p>}
-      <DataTable data={data} isLoading={isLoading} emptyText={error ? 'La información no está disponible.' : 'No hay registros para mostrar.'}
+      <DataTable className={management ? 'cxp-management-table' : ''} data={data} isLoading={isLoading} emptyText={error ? 'La información no está disponible.' : 'No hay registros para mostrar.'}
         columns={[
           { header: 'ID', accessorKey: entity.idField },
           ...entity.columns.map(name => {
@@ -142,26 +177,43 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
             return { header: field.label, accessorKey: name, cell: ({ value }: { value: CxpRecord[string] }) => display(field, value) };
           }),
           { header: 'Acciones', align: 'right', cell: ({ row }: { row: CxpRecord }) => <div className="flex flex-col items-end gap-2">
-            <div className="flex gap-1">
-              <button type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} className="p-2 text-slate-500 hover:bg-slate-100 rounded-md"><Eye size={16} /></button>
-              <button type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil size={16} /></button>
-              <button type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} className="p-2 text-red-600 hover:bg-red-50 rounded-md"><Trash2 size={16} /></button>
+            <div className={management ? 'cxp-management-row-actions' : 'flex gap-1'}>
+              <PageButton icon={management ? Eye : undefined} size={management ? 'sm' : 'md'} variant="secondary" type="button" disabled={loadingRecord} title="Ver registro" aria-label={`Ver registro ${row[entity.idField]}`} onClick={() => open(row, 'view')} >{management ? 'Ver' : <Eye size={16} />}</PageButton>
+              <PageButton icon={management ? Pencil : undefined} size={management ? 'sm' : 'md'} variant="secondary" type="button" disabled={loadingRecord} title="Editar registro" aria-label={`Editar registro ${row[entity.idField]}`} onClick={() => open(row, 'edit')} >{management ? 'Editar' : <Pencil size={16} />}</PageButton>
+              <PageButton icon={management ? Trash2 : undefined} size={management ? 'sm' : 'md'} variant="danger" type="button" title="Eliminar registro" aria-label={`Eliminar registro ${row[entity.idField]}`} onClick={() => { setNotice(null); setDeleting(row); }} >{management ? 'Eliminar' : <Trash2 size={16} />}</PageButton>
             </div><div className="flex flex-wrap justify-end gap-2">{children(row)}</div>
           </div> },
         ]} />
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+      <div className={management ? 'cxp-management-pagination' : 'flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600'}>
         <span>{meta.total} registros · Página {page} de {meta.totalPages}</span>
-        <div className="flex gap-2"><Button variant="secondary" icon={ChevronLeft} disabled={page <= 1 || isLoading} onClick={() => setPage(current => current - 1)}>Anterior</Button>
-          <Button variant="secondary" icon={ChevronRight} disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(current => current + 1)}>Siguiente</Button></div>
+        <div className="flex gap-2"><PageButton variant="secondary" icon={ChevronLeft} disabled={page <= 1 || isLoading} onClick={() => setPage(current => current - 1)}>Anterior</PageButton>
+          <PageButton variant="secondary" icon={ChevronRight} disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(current => current + 1)}>Siguiente</PageButton></div>
       </div>
-      <Modal isOpen={!!modal} onClose={close} size="lg" title={`${modal?.mode === 'create' ? 'Crear' : modal?.mode === 'edit' ? 'Editar' : 'Consultar'} · ${entity.singular}`}>
+      <RecordModal isOpen={!!modal} onClose={close} size="lg" {...(management ? { busy: formBusy } : {})} title={`${modal?.mode === 'create' ? 'Crear' : modal?.mode === 'edit' ? 'Editar' : 'Consultar'} · ${entity.singular}`}>
         {modal && <Form key={`${resource}-${modal.mode}-${modal.record?.[entity.idField] ?? 'new'}`} record={modal.record} readOnly={modal.mode === 'view'}
+          onBusyChange={management ? setFormBusy : undefined}
           initialValues={filterDefinition?.lookup && filterValue ? { [filterField]: filterDefinition.type === 'number' ? Number(filterValue) : filterValue } : {}}
           onCancel={close} onSuccess={() => { close(); setNotice('Registro guardado.'); refetch(); }} />}
-      </Modal>
-      <ConfirmDialog isOpen={!!deleting} onClose={() => { if (!busyDelete) setDeleting(null); }} onConfirm={remove}
+      </RecordModal>
+      {management ? <CxpManagementDialog isOpen={!!deleting} onClose={() => setDeleting(null)} busy={busyDelete} size="sm" title={`Eliminar · ${entity.singular}`}>
+        <p className="cxp-management-description">¿Deseas eliminar el registro #{deleting?.[entity.idField]}? Los registros utilizados por otros o ya confirmados se conservan.</p>
+        <div className="cxp-management-confirm-actions">
+          <PageButton icon={X} variant="secondary" disabled={busyDelete} onClick={() => setDeleting(null)}>Cancelar</PageButton>
+          <PageButton icon={Trash2} variant="danger" disabled={busyDelete} onClick={() => void remove()}>{busyDelete ? 'Eliminando…' : 'Eliminar'}</PageButton>
+        </div>
+      </CxpManagementDialog> : <ConfirmDialog isOpen={!!deleting} onClose={() => { if (!busyDelete) setDeleting(null); }} onConfirm={remove}
         title={`Eliminar · ${entity.singular}`} description={`¿Deseas eliminar el registro #${deleting?.[entity.idField]}? Los registros utilizados por otros o ya confirmados se conservan.`}
-        confirmLabel="Eliminar" isLoading={busyDelete} />
+        confirmLabel="Eliminar" isLoading={busyDelete} />}
+      <CxpManagementDialog isOpen={management && showViews} onClose={() => setShowViews(false)} size="md"
+        title={`Vistas de ${entity.group}`} description="Elegí la vista que necesitás consultar.">
+        <div className="cxp-management-options">
+          {CXP_MANAGEMENT_VIEWS.filter(view => view.group === entity.group).map(view =>
+            <CxpButton key={view.resource} variant="secondary" className="cxp-management-option" aria-current={resource === view.resource ? 'page' : undefined}
+              onClick={() => { setShowViews(false); if (resource !== view.resource) navigate(view.path); }}>
+              <strong>{view.title}{resource === view.resource ? ' · Vista actual' : ''}</strong><small>{view.description}</small>
+            </CxpButton>)}
+        </div>
+      </CxpManagementDialog>
     </div>
   </CxpLayout>;
 }

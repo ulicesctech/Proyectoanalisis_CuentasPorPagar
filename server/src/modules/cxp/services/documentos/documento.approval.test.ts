@@ -27,6 +27,7 @@ const actors: Record<number, Row> = {
   21: { USU_ID_USUARIO: 21, USU_NOMBRE_COMPLETO: 'Aprobador dos', USU_ID_ROL: 2, USU_ACTIVO: 1, ROL_ACTIVO: 1 },
   30: { USU_ID_USUARIO: 30, USU_NOMBRE_COMPLETO: 'Otro rol', USU_ID_ROL: 3, USU_ACTIVO: 1, ROL_ACTIVO: 1 },
   31: { USU_ID_USUARIO: 31, USU_NOMBRE_COMPLETO: 'Usuario inactivo', USU_ID_ROL: 2, USU_ACTIVO: 0, ROL_ACTIVO: 1 },
+  32: { USU_ID_USUARIO: 32, USU_NOMBRE_COMPLETO: 'Rol inactivo', USU_ID_ROL: 2, USU_ACTIVO: 1, ROL_ACTIVO: 0 },
 };
 
 function memory(options: { rules?: Row[]; approvals?: Row[]; failEvent?: boolean } = {}) {
@@ -142,14 +143,13 @@ test('un rechazo exige motivo, registra al actor y cambia el documento a RECHAZA
   assert.equal(db.approvals[0].ESTADO, 'RECHAZADA');
 });
 
-test('los roles no se usan: un usuario con otro rol puede aprobar', async () => {
+test('el ID de rol debe coincidir con la regla antes de escribir', async () => {
   const db = memory();
-  await approve(createDocumentoApprovalOperation(db.run), 30);
-  assert.equal(db.approvals[0].ID_USUARIO_APROBADOR, 30);
-  assert.equal(db.document.ESTADO, 'APROBADA');
+  await assert.rejects(approve(createDocumentoApprovalOperation(db.run), 30), { status: 403 });
+  assert.deepEqual(db.writes, []);
 });
 
-test('sin roles, un mismo usuario no resuelve dos reglas del mismo documento', async () => {
+test('un mismo usuario no resuelve dos reglas del mismo documento', async () => {
   const db = memory({ rules: [ruleRow(), { ...ruleRow(), ID_REGLA: 2, NOMBRE_REGLA: 'Otra regla' }] });
   const service = createDocumentoApprovalOperation(db.run);
   await approve(service, 20, 1);
@@ -160,8 +160,8 @@ test('sin roles, un mismo usuario no resuelve dos reglas del mismo documento', a
   assert.equal(db.document.ESTADO, 'APROBADA');
 });
 
-test('usuario inactivo y autoaprobación se rechazan sin escrituras', async () => {
-  for (const actor of [31, 10]) {
+test('usuario inactivo, rol inactivo y autoaprobación se rechazan sin escrituras', async () => {
+  for (const actor of [31, 32, 10]) {
     const db = memory();
     await assert.rejects(approve(createDocumentoApprovalOperation(db.run), actor), { status: 403 });
     assert.deepEqual(db.writes, []);

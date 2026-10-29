@@ -1,0 +1,107 @@
+/* Botones de Pagos: acabado sobrio y uniforme con la paleta del ERP. */
+.cxp-button.cxp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  max-width: 100%;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: normal;
+  white-space: nowrap;
+  background-image: none;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.cxp-button.cxp-button--sm { height: 36px; padding: 0 12px; font-size: 13px; }
+.cxp-button.cxp-button--md { height: 40px; padding: 0 14px; font-size: 14px; }
+.cxp-button.cxp-button--lg { height: 40px; padding: 0 18px; font-size: 14px; }
+.cxp-button > svg { flex-shrink: 0; stroke-width: 1.75; }
+.cxp-button > span { min-width: 0; }
+
+.cxp-button.cxp-button--primary {
+  color: #fff;
+  background-color: #2563eb;
+  border-color: #2563eb;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+.cxp-button.cxp-button--primary:not(:disabled):hover {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.cxp-button.cxp-button--secondary {
+  color: #334155;
+  background-color: #fff;
+  border-color: #cbd5e1;
+}
+.cxp-button.cxp-button--secondary:not(:disabled):hover {
+  color: #1d4ed8;
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+}
+.cxp-button.cxp-button--success {
+  color: #fff;
+  background-color: #059669;
+  border-color: #059669;
+}
+.cxp-button.cxp-button--success:not(:disabled):hover {
+  background-color: #047857;
+  border-color: #047857;
+}
+/* Las acciones destructivas conservan un acento reconocible, sin bloque rojo. */
+.cxp-button.cxp-button--danger {
+  color: #b91c1c;
+  background-color: #fff;
+  border-color: #fecaca;
+}
+.cxp-button.cxp-button--danger:not(:disabled):hover {
+  color: #991b1b;
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+}
+.cxp-button.cxp-button--ghost {
+  color: #475569;
+  background-color: transparent;
+  border-color: transparent;
+}
+.cxp-button.cxp-button--ghost:not(:disabled):hover {
+  color: #1d4ed8;
+  background-color: #eff6ff;
+}
+
+/* En proceso / Historial se distinguen de los botones que ejecutan acciones. */
+.cxp-workspace-views .cxp-button[aria-pressed] { box-shadow: none; }
+.cxp-workspace-views .cxp-button[aria-pressed="true"] {
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+}
+.cxp-workspace-views .cxp-button[aria-pressed="true"]:not(:disabled):hover {
+  background-color: #dbeafe;
+  border-color: #93c5fd;
+}
+.cxp-workspace-views .cxp-button[aria-pressed="true"] .cxp-workspace-count {
+  color: #1d4ed8;
+  background-color: #dbeafe;
+}
+.cxp-button.cxp-button:not(:disabled):active { transform: none; box-shadow: none; }
+.cxp-button.cxp-button:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.cxp-button.cxp-button:disabled {
+  color: #94a3b8;
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  background-image: none;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.cxp-button:disabled > svg { color: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  .cxp-button.cxp-button { transition: none; }
+}

@@ -34,11 +34,12 @@ test('la lista filtra antes de paginar y conserva el saldo almacenado', async ()
 
 test('el expediente reúne todas las relaciones sin depender de la paginación del CRUD', async () => {
   const calls: string[] = [];
+  let sucursalNombre: string | null = 'Sucursal Central';
   const connection = {
     async execute(sql: string) {
       calls.push(sql);
       if (sql.includes('FROM CXP_DOCUMENTO WHERE')) return { rows: [{ ID_DOCUMENTO: 9, ID_PROVEEDOR: 2, ESTADO: 'RECIBIDO' }] };
-      if (sql.includes('FROM PROVEEDOR')) return { rows: [{ PRO_NOMBRE_ENTIDAD: 'Proveedor ejemplo' }] };
+      if (sql.includes('FROM CXP_DOCUMENTO D')) return { rows: [{ PROVEEDOR_NOMBRE: 'Proveedor ejemplo', SUCURSAL_NOMBRE: sucursalNombre }] };
       if (sql.includes('FROM CXP_DOCUMENTO_DETALLE')) return { rows: [{ ID_DETALLE: 1 }, { ID_DETALLE: 2 }] };
       if (sql.includes('FROM CXP_DOCUMENTO_TRIBUTO')) return { rows: [{ ID_TRIBUTO: 3 }] };
       if (sql.includes('FROM CXP_ARCHIVO')) return { rows: [{ ID_ARCHIVO: 5, ID_APLICACION: 4 }] };
@@ -53,6 +54,7 @@ test('el expediente reúne todas las relaciones sin depender de la paginación d
   } as unknown as Connection;
   const result = await getDocumentoExpedienteWithConnection(connection, 9);
   assert.equal(result?.documento.proveedorNombre, 'Proveedor ejemplo');
+  assert.equal(result?.documento.sucursalNombre, 'Sucursal Central');
   assert.equal(result?.lineas.length, 2);
   assert.equal(result?.tributos.length, 1);
   assert.equal(result?.archivos.length, 1);
@@ -61,6 +63,10 @@ test('el expediente reúne todas las relaciones sin depender de la paginación d
   assert.equal(result?.aplicaciones[1].codigoPagoProceso, null);
   assert.ok(calls.every(sql => !sql.includes('FETCH NEXT')));
   assert.ok(calls.some(sql => sql.includes('ID_APLICACION IN')));
+  assert.ok(calls.some(sql => sql.includes('LEFT JOIN CXC_SUCURSALES S ON S.ID_SUCURSAL = D.ID_SUCURSAL')));
+  sucursalNombre = null;
+  const withoutBranch = await getDocumentoExpedienteWithConnection(connection, 9);
+  assert.equal(withoutBranch?.documento.sucursalNombre, null);
 });
 
 test('una fecha inválida se rechaza antes de abrir Oracle', async () => {

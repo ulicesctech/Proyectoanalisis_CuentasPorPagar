@@ -2,9 +2,9 @@ import type { ActorProceso, AprobacionProceso, ProcesoPago } from '@erp/contract
 
 // Refleja en pantalla la segregación que aplica el servidor (workflow.ts):
 // solo oculta acciones; la decisión final siempre la toma el servidor.
-// Los roles no se usan por ahora: solo cuenta que el usuario no haya decidido ya.
+// Además de la capacidad APROBAR, la posición exige el rol de su regla.
 
-type Actor = Pick<ActorProceso, 'id'> | null;
+type Actor = Pick<ActorProceso, 'id' | 'roles'> | null;
 
 /** Último usuario que registró la acción en el historial del proceso. */
 function ultimoUsuario(proceso: ProcesoPago, accion: 'PROGRAMAR' | 'ENTREGAR'): number | undefined {
@@ -14,6 +14,8 @@ function ultimoUsuario(proceso: ProcesoPago, accion: 'PROGRAMAR' | 'ENTREGAR'): 
 /** Motivo por el que el usuario no puede decidir la aprobación, o null si puede. */
 export function impedimentoAprobacion(proceso: ProcesoPago, aprobacion: AprobacionProceso, actor: Actor): string | null {
   if (!actor) return 'Selecciona el usuario operativo.';
+  if (!actor.roles.length) return 'El usuario operativo necesita un rol activo.';
+  if (!actor.roles.includes(aprobacion.rol)) return 'Tu rol no coincide con el requerido por esta aprobación.';
   const yaDecidio = proceso.aprobaciones.some(item =>
     item.id !== aprobacion.id &&
     ['APROBADA', 'RECHAZADA'].includes(item.decision) &&

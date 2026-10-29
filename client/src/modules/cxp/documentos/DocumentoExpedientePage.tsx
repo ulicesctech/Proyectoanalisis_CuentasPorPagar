@@ -287,6 +287,8 @@ export function CxpDocumentoExpedientePage() {
             <dl className="flex flex-wrap gap-6">
               <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo pendiente</dt>
                 <dd className="text-xl font-bold text-blue-700 mt-1">{formatDocumentoMoney(document.saldoPendiente, currency)}</dd></div>
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sucursal del documento</dt>
+                <dd className="text-sm font-semibold text-slate-900 mt-1">{document.sucursalNombre?.trim() || 'Sin sucursal registrada'}</dd></div>
               <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vencimiento calculado</dt>
                 <dd className="text-lg font-semibold text-slate-900 mt-1">{formatDocumentoDate(document.fechaVencimiento)}</dd>
                 <p className="text-xs text-slate-500 mt-0.5">{Number(document.diasCredito) === 0 ? 'Contado' : `${document.diasCredito} días de crédito`}{document.idCondicionCredito ? ` · Condición #${document.idCondicionCredito}` : ''}</p></div>
@@ -374,10 +376,10 @@ export function CxpDocumentoExpedientePage() {
         <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" aria-label="Cabecera del documento">
           <h2 className="font-bold text-slate-900 mb-4">Cabecera</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-            <Info label="Proveedor" value={document.proveedorNombre || (document.idProveedor ? `#${document.idProveedor}` : null)} />
-            <Info label="Tipo" value={readableState(document.tipoDocumento)} />
             <Info label="Fecha del documento" value={formatDocumentoDate(document.fechaDocumento)} />
-            <Info label="Vencimiento" value={formatDocumentoDate(document.fechaVencimiento)} />
+            <Info label="Fecha de recepción" value={formatDocumentoDate(document.fechaRecepcion)} />
+            <Info label="Tipo de registro" value={readableState(document.tipoRegistro)} />
+            {document.noOrdenCompra && <Info label="Orden de compra" value={document.noOrdenCompra} />}
             <Info label="Origen" value={readableState(document.origenIngreso)} />
             <Info label="UUID fiscal" value={document.uuidFiscal} />
             <Info label="Hash de origen" value={document.hashOrigen} />

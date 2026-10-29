@@ -24,14 +24,19 @@ function permit(actor: ActorProceso, permission: PermisoProceso) {
 /**
  * Segregación de funciones en la aprobación RF10: un usuario decide como máximo una
  * posición del mismo proceso, así una regla que pide N aprobadores requiere N personas
- * distintas. Los roles no se usan por ahora: ID_ROL_APROBADOR se conserva como dato
- * porque Oracle lo exige, pero no limita quién aprueba.
+ * distintas. Además de la capacidad APROBAR, el rol activo del usuario debe
+ * coincidir con ID_ROL_APROBADOR de la posición creada por la regla aplicable.
  */
 export function assertApprovalSegregation(
   process: Pick<ProcesoPago, 'aprobaciones'>,
   approval: AprobacionProceso,
   actor: ActorProceso,
 ) {
+  requireThat(
+    actor.roles.includes(Number(approval.rol)),
+    'Tu rol no coincide con el requerido por la regla de esta aprobación',
+    403,
+  );
   requireThat(
     !process.aprobaciones.some(item =>
       item.id !== approval.id &&

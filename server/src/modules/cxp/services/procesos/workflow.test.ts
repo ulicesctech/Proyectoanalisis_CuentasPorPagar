@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import type { ActorProceso, CxpRecord, ProcesoPago } from '@erp/contracts';
 import { assertApprovalSegregation, assertDistinctOperator, createPaymentWorkflow, eligible } from './workflow';
 import type { ProcesoStore, ProcesoTx } from './ports';
@@ -29,10 +30,11 @@ function reviewProcess(): ProcesoPago {
   };
 }
 
-test('RF10: los roles no limitan quién aprueba', () => {
+test('RF10: APROBAR también exige el rol de la posición creada por la regla', () => {
   const process = reviewProcess();
-  assert.doesNotThrow(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [8])));
-  assert.doesNotThrow(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [])));
+  assert.throws(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [8])), { status: 403 });
+  assert.throws(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [])), { status: 403 });
+  assert.doesNotThrow(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [4])));
 });
 
 test('RF10: un usuario no ocupa dos posiciones de aprobación del mismo proceso', () => {
@@ -69,7 +71,28 @@ test('aprobar una segunda posición del mismo proceso no escribe la decisión', 
     update: async (...args: unknown[]) => { updates.push(args); },
   } as unknown as ProcesoTx;
   const workflow = createPaymentWorkflow(storeFor(tx), () => new Date('2026-10-23T12:00:00Z'));
-  await assert.rejects(workflow.act(50, { accion: 'aprobar', version: 'v1', idAprobacion: 2 }, actor(5, [])), { status: 403 });
+  await assert.rejects(workflow.act(50, { accion: 'aprobar', version: 'v1', idAprobacion: 2 }, actor(5, [4])), { status: 403 });
+  assert.equal(updates.length, 0);
+});
+
+test('la capacidad APROBAR no permite decidir una regla de otro rol ni escribe la decisión', async () => {
+  const process = reviewProcess();
+  const updates: unknown[] = [];
+  const tx = {
+    actorExists: async () => {},
+    get: async () => process,
+    row: async () => ({}),
+    openPeriod: async () => {},
+    update: async (...args: unknown[]) => { updates.push(args); },
+  } as unknown as ProcesoTx;
+  const workflow = createPaymentWorkflow(storeFor(tx), () => new Date('2026-10-23T12:00:00Z'));
+  const aprobadorDeOtroRol = { ...actor(5, [8]), permisos: ['APROBAR'] as ActorProceso['permisos'] };
+  for (const accion of [
+    { accion: 'aprobar', version: 'v1', idAprobacion: 1 },
+    { accion: 'rechazar', version: 'v1', idAprobacion: 1, motivo: 'Motivo suficiente' },
+  ]) {
+    await assert.rejects(workflow.act(50, accion, aprobadorDeOtroRol), /rol no coincide/);
+  }
   assert.equal(updates.length, 0);
 });
 
@@ -90,6 +113,7 @@ test('confirmar el cobro lo rechaza si lo intenta quien ejecutó el pago, antes 
   await assert.rejects(workflow.act(50, { accion: 'cobrar', version: 'v1' }, actor(11, [])), { status: 403 });
   assert.equal(bankCalls, 0);
 });
+
 
 test('el proceso no reserva facturas especiales aprobadas antes de emitirlas', () => {
   const document: CxpRecord = {

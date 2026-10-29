@@ -26,6 +26,7 @@ export type DocumentoApprovalContext = {
   actor: null | {
     idUsuario: number;
     nombre: string | null;
+    idRol: number | null;
     puedeDecidir: boolean;
     reglasDisponibles: number[];
     impedimento: string | null;
@@ -72,6 +73,7 @@ function approvedUsers(decisions: DocumentoApprovalDecision[], idRegla: number):
 function actorBlocker(documento: CxpRecord, actor: ApprovalActor | null): string | null {
   if (!actor) return 'El usuario indicado no existe.';
   if (!actor.usuarioActivo) return 'El usuario indicado está inactivo.';
+  if (!actor.rolActivo) return 'El rol del usuario está inactivo.';
   if (actor.idUsuario === Number(documento.creadoPor) ||
       documento.solicitadoPor != null && actor.idUsuario === Number(documento.solicitadoPor)) {
     return 'Quien registró o solicitó el documento no puede aprobarlo.';
@@ -100,17 +102,18 @@ export function buildDocumentoApprovalContext(
         : 'El documento no está pendiente de aprobación.';
   }
   const blocker = actorRequested ? actorBlocker(documento, actor) : null;
-  // Los roles no se usan por ahora: cualquier usuario activo puede decidir, pero solo
-  // una vez por documento, para que cada aprobación requerida sea de una persona distinta.
+  // Conserva la coincidencia de rol de Develop y exige personas distintas por decisión.
   const yaDecidio = actor != null && decisions.some(item =>
     ['APROBADA', 'RECHAZADA'].includes(item.estado) && Number(item.idUsuarioAprobador) === actor.idUsuario);
   const available = !impedimento && !blocker && actor && !yaDecidio
-    ? incomplete.filter(item => item.nivel === nivelActual) : [];
+    ? incomplete.filter(item => item.nivel === nivelActual && item.idRolAprobador === actor.idRol) : [];
   let actorImpediment = blocker;
   if (actorRequested && !actorImpediment && !impedimento && actor && !available.length) {
     actorImpediment = yaDecidio
       ? 'Este usuario ya registró una decisión en este documento; debe resolverla otra persona.'
-      : 'No hay reglas pendientes en el nivel de aprobación actual.';
+      : incomplete.some(item => item.nivel === nivelActual && item.idRolAprobador === actor.idRol)
+        ? 'No hay reglas pendientes en el nivel de aprobación actual.'
+        : 'El rol del usuario no corresponde al nivel de aprobación actual.';
   }
   return {
     estadoDocumento,
@@ -127,7 +130,7 @@ export function buildDocumentoApprovalContext(
     }),
     decisiones: decisions,
     actor: actorRequested ? {
-      idUsuario: actor?.idUsuario ?? 0, nombre: actor?.nombre ?? null,
+      idUsuario: actor?.idUsuario ?? 0, nombre: actor?.nombre ?? null, idRol: actor?.idRol ?? null,
       puedeDecidir: available.length > 0, reglasDisponibles: available.map(item => item.idRegla),
       impedimento: actorImpediment ?? impedimento,
     } : null,

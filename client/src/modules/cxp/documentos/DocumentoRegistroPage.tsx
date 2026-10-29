@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, FileText } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Navigate } from 'react-router-dom';
+import { ArrowRight, Check, FileText, X } from 'lucide-react';
 import {
   CXP_SCHEMAS, getCxpEntity, prepareCxpRecord, validateCxpRecord,
   type CxpDocumento, type CxpRecord,
@@ -8,11 +9,10 @@ import {
 import { apiClient, ApiError } from '../api';
 import { getOperadorId } from '../operador/operador';
 import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
-import { CxpLayout } from '../CxpLayout';
-import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { documentoRegistroPayload } from './documentoRegistroPayload';
 import { formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
+import '../procesos/procesos.css';
 
 const fields = getCxpEntity('documentos')!.fields;
 const choices = (name: string) => fields.find(field => field.name === name)?.options?.map(value => ({ value, label: readableState(value) })) ?? [];
@@ -96,7 +96,16 @@ function stepErrors(values: Values, step: number): Errors {
 }
 
 export function CxpDocumentoRegistroPage() {
-  const navigate = useNavigate();
+  return <Navigate to="/cxp/documentos" replace state={{ openRegistro: true }} />;
+}
+
+export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
+  onClose: () => void;
+  onSuccess: (created: CxpDocumento) => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const stepTitleRef = useRef<HTMLHeadingElement>(null);
+  const savingRef = useRef(false);
   const [step, setStep] = useState(0);
   // Se precarga con el usuario operativo: el servidor rechaza otro distinto.
   const [values, setValues] = useState<Values>(() => ({ ...initialValues, creadoPor: getOperadorId() }));
@@ -106,6 +115,48 @@ export function CxpDocumentoRegistroPage() {
   const [saving, setSaving] = useState(false);
   const [dueDate, setDueDate] = useState<DueDatePreview | null>(null);
   const [dueDateLoading, setDueDateLoading] = useState(false);
+
+  const close = () => {
+    if (savingRef.current) return;
+    if (values !== initialValues && !window.confirm('Hay datos sin guardar. ¿Cerrar el registro?')) return;
+    onClose();
+  };
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const timer = window.setTimeout(() => stepTitleRef.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, a[href], [tabindex="0"]',
+      ) ?? []).filter(control => !control.matches(':disabled') && control.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (!first) return;
+      if (event.shiftKey && (document.activeElement === first || !controls.includes(document.activeElement as HTMLElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
+
+  useEffect(() => { stepTitleRef.current?.focus(); }, [step]);
 
   useEffect(() => {
     if (!values.fechaDocumento || !values.idCondicionCredito) {
@@ -161,7 +212,7 @@ export function CxpDocumentoRegistroPage() {
     setErrors({}); setFormError(null); setStep(current => current + 1);
   };
   const submit = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
     const identification = stepErrors(values, 0);
     const amounts = stepErrors(values, 1);
     if (!Object.keys(amounts).length && !dueDate) {
@@ -191,10 +242,11 @@ export function CxpDocumentoRegistroPage() {
       setStep(issues.some(issue => amountFields.includes(issue.campo as typeof amountFields[number])) ? 1 : 0);
       return;
     }
+    savingRef.current = true;
     setSaving(true); setFormError(null);
     try {
       const created = await apiClient.post<CxpDocumento>('/cxp/documentos', documentoRegistroPayload(input, parsed.data as CxpRecord));
-      navigate(`/cxp/documentos/${created.idDocumento}`, { state: { created: true } });
+      onSuccess(created);
     } catch (reason) {
       setFormError(reason instanceof ApiError ? reason.message : 'No se pudo registrar el documento. Inténtalo de nuevo.');
       if (reason instanceof ApiError && Array.isArray(reason.details)) {
@@ -204,7 +256,7 @@ export function CxpDocumentoRegistroPage() {
         setErrors(Object.fromEntries(fieldIssues) as Errors);
         if (fieldIssues.some(([field]) => ['fechaDocumento', 'idCondicionCredito', 'diasCredito', 'fechaVencimiento'].includes(field))) setStep(1);
       }
-    } finally { setSaving(false); }
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
   const input = (name: Field, label: string, props: Record<string, unknown> = {}) =>
@@ -214,27 +266,34 @@ export function CxpDocumentoRegistroPage() {
     <Select id={`registro-${name}`} label={label} value={values[name]} error={errors[name]} options={options} placeholder="" required={required}
       onChange={(event: React.ChangeEvent<HTMLSelectElement>) => change(name, event.target.value)} />;
 
-  return <CxpLayout resource="documentos">
-    <div className="space-y-5 max-w-6xl">
-      <Link to="/cxp/documentos" className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700"><ArrowLeft size={16} /> Volver a documentos</Link>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><CxpBreadcrumb group="Documentos" current="Registro" />
-          <h1 className="text-2xl font-bold text-slate-900">Registrar DTE</h1>
-          <p className="text-sm text-slate-500 mt-1">Guarda el documento recibido y completa su expediente antes de validarlo.</p></div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><FileText size={14} /> Estado inicial: RECIBIDO</span>
-      </div>
+  return createPortal(<div className="cxp-process-page fixed inset-0 z-[9997] flex items-center justify-center bg-slate-950/35 px-4 py-6 backdrop-blur-[1px]"
+    role="presentation">
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="registro-documento-title"
+      aria-describedby="registro-documento-description" className="cxp-process-dialog cxp-create-dialog">
+      <header className="cxp-dialog-heading">
+        <div>
+          <h2 id="registro-documento-title" className="text-lg font-semibold text-slate-900">Registrar DTE</h2>
+          <p id="registro-documento-description" className="mt-1 text-sm text-slate-500">Guarda el documento recibido y completa su expediente antes de validarlo.</p>
+        </div>
+        <div className="cxp-dialog-heading-actions">
+          <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700"><FileText size={14} /> Estado inicial: RECIBIDO</span>
+          <Button type="button" icon={X} variant="secondary" disabled={saving} onClick={close}>Cerrar</Button>
+        </div>
+      </header>
+      <form className="cxp-dialog-body space-y-5" onSubmit={event => { event.preventDefault(); if (savingRef.current) return; if (step < 2) advance(); else void submit(); }}>
 
       <nav className="grid grid-cols-3 gap-2" aria-label="Pasos del registro">
-        {steps.map((title, index) => <div key={title} aria-current={step === index ? 'step' : undefined}
-          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${step === index ? 'border-blue-300 bg-blue-50 text-blue-800' : index < step ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500'}`}>
+        {steps.map((title, index) => <div key={title} aria-label={title} aria-current={step === index ? 'step' : undefined}
+          className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 min-[480px]:justify-start ${step === index ? 'border-blue-300 bg-blue-50 text-blue-800' : index < step ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500'}`}>
           <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step === index ? 'bg-blue-600 text-white' : index < step ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{index < step ? <Check size={14} /> : index + 1}</span>
-          <span className="text-sm font-semibold">{title}</span>
+          <span className="hidden text-sm font-semibold sm:inline">{title}</span>
+          <span className="hidden text-xs font-semibold min-[480px]:inline sm:hidden">{index === 0 ? 'Datos' : index === 1 ? 'Importes' : 'Revisión'}</span>
         </div>)}
       </nav>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px] gap-5 items-start">
         <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" aria-label={steps[step]}>
-          <div className="mb-5"><h2 className="text-lg font-bold text-slate-900">{steps[step]}</h2>
+          <div className="mb-5"><h3 ref={stepTitleRef} tabIndex={-1} className="text-lg font-bold text-slate-900 focus:outline-none">{steps[step]}</h3>
             <p className="text-sm text-slate-500 mt-1">{step === 0 ? 'Identifica el comprobante, su proveedor y quién lo registra.' : step === 1 ? 'Ingresa las fechas y los importes tal como figuran en el DTE.' : 'Confirma los datos antes de crear el documento recibido.'}</p></div>
           {formError && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
 
@@ -314,12 +373,12 @@ export function CxpDocumentoRegistroPage() {
             <p className="text-sm text-slate-600">Después del registro adjunta el DTE y añade las líneas y los tributos desde el expediente. RF04 exigirá el adjunto antes de enviarlo a aprobación.</p>
           </div>}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 mt-6 pt-4">
+          <div className="cxp-dialog-footer flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 mt-6 pt-4">
             <span className="text-xs text-slate-500">Paso {step + 1} de 3</span>
             <div className="flex gap-2">
               {step > 0 && <Button variant="secondary" disabled={saving} onClick={() => { setStep(current => current - 1); setFormError(null); }}>Anterior</Button>}
-              {step < 2 ? <Button icon={ArrowRight} onClick={advance}>Continuar</Button>
-                : <Button icon={Check} disabled={saving} onClick={submit}>{saving ? 'Registrando…' : 'Registrar documento'}</Button>}
+              {step < 2 ? <Button type="submit" icon={ArrowRight}>Continuar</Button>
+                : <Button type="submit" icon={Check} disabled={saving}>{saving ? 'Registrando…' : 'Registrar documento'}</Button>}
             </div>
           </div>
         </section>
@@ -332,6 +391,7 @@ export function CxpDocumentoRegistroPage() {
           </ol>
         </aside>
       </div>
-    </div>
-  </CxpLayout>;
+      </form>
+    </section>
+  </div>, document.body);
 }

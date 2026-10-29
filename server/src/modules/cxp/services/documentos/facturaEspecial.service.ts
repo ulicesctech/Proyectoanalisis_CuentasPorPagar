@@ -26,14 +26,6 @@ const label = (state: string) => state.replace(/_/g, ' ');
 const numero = (fe: Pick<FacturaEspecialRow, 'serie' | 'numeroDocumento'>) => `${fe.serie}-${fe.numeroDocumento}`;
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
-/** CXP_APROBACION.ID_ROL_APROBADOR es obligatorio en Oracle; el rol no limita quién aprueba. */
-function rolRegistro(idRol: number | null): number {
-  if (idRol == null) {
-    throw new CxpError('Oracle exige un rol en cada aprobación: indica uno en VALOR_TEXTO del parámetro CXP_FE_APROBADOR de este usuario (solo se guarda como dato).', 409);
-  }
-  return idRol;
-}
-
 function validId(id: number): number {
   if (!Number.isSafeInteger(id) || id <= 0) throw new CxpError('El identificador debe ser un entero positivo');
   return id;
@@ -353,7 +345,7 @@ export const cxpFacturaEspecialService = {
   },
 
   /**
-   * APROBACIÓN: solo aprobadores autorizados (parámetro CXP_FE_APROBADOR) y distintos
+   * APROBACIÓN: solo usuarios activos del rol CXP_FE_APROBADOR_ROL y distintos
    * de quien registró. La decisión se guarda en CXP_APROBACION y el documento pasa a
    * APROBADA cuando se cumplen las reglas de aprobación configuradas.
    */
@@ -371,7 +363,7 @@ export const cxpFacturaEspecialService = {
       }
       const ahora = cxpNow();
       await aprobaciones.bind(connection).create({
-        idDocumento: fe.idDocumento, nivel: 1, idRolAprobador: rolRegistro(autorizado.idRol), idUsuarioAprobador: input.usuario,
+        idDocumento: fe.idDocumento, nivel: 1, idRolAprobador: autorizado.idRol, idUsuarioAprobador: input.usuario,
         estado: 'APROBADA', accion: 'APROBAR_FACTURA_ESPECIAL', fechaSolicitud: ahora, fechaDecision: ahora, observacion: input.observacion ?? null,
       });
       const actual = await documentoActual(connection, fe.idDocumento);
@@ -406,7 +398,7 @@ export const cxpFacturaEspecialService = {
         if (!autorizado) throw new CxpError('El usuario no está autorizado para rechazar en la etapa de aprobación.', 403);
         const ahora = cxpNow();
         await aprobaciones.bind(connection).create({
-          idDocumento: fe.idDocumento, nivel: 1, idRolAprobador: rolRegistro(autorizado.idRol), idUsuarioAprobador: input.usuario,
+          idDocumento: fe.idDocumento, nivel: 1, idRolAprobador: autorizado.idRol, idUsuarioAprobador: input.usuario,
           estado: 'RECHAZADA', accion: 'RECHAZAR_FACTURA_ESPECIAL', fechaSolicitud: ahora, fechaDecision: ahora, observacion: input.motivo,
         });
       }

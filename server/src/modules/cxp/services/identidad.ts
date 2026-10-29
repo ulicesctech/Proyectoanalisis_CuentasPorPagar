@@ -1,5 +1,5 @@
 import type { RequestHandler, Response } from 'express';
-import type { ActorProceso } from '@erp/contracts';
+import type { ActorProceso, PermisoProceso } from '@erp/contracts';
 import { config, type CxpAuthMode } from '../../../config';
 import {
   findUsuarioOperativo, listUsuariosOperativos, type UsuarioOperativoRow,
@@ -12,22 +12,29 @@ import { CxpError } from './errors';
  * Modo provisional: el usuario se declara con X-CXP-Actor-Id. Se valida que exista
  * y que esté activo, pero NO se comprueba que la persona sea
  * quien dice ser. La autoría de la bitácora no es prueba hasta que exista inicio
- * de sesión. Los roles no se usan por ahora: `roles` queda vacío (el contrato
- * ActorProceso lo conserva) y ninguna operación depende de él.
- *
- * Mientras no exista una matriz de permisos por rol, todo usuario operativo recibe
- * los mismos permisos; la segregación de funciones la aplica cada flujo.
+ * de sesión. El rol activo se lee de Oracle para aplicar los controles de
+ * aprobación documental y las capacidades de procesos de pago.
  */
-const PERMISOS_PROVISIONALES: ActorProceso['permisos'] = ['CREAR', 'APROBAR', 'TESORERIA', 'ANULAR'];
+const PERMISO_POR_ROL: Readonly<Record<string, PermisoProceso>> = {
+  OPERADOR_CXP: 'CREAR',
+  APROBADOR_CXP: 'APROBAR',
+  TESORERIA_CXP: 'TESORERIA',
+  SUPERVISOR_CXP: 'ANULAR',
+};
 
 export const ACTOR_HEADER = 'X-CXP-Actor-Id';
 
 export function actorDesdeUsuario(usuario: UsuarioOperativoRow): ActorProceso {
+  const nombreRol = usuario.rolActivo ? usuario.nombreRolNormalizado : null;
+  const permiso = nombreRol && Object.hasOwn(PERMISO_POR_ROL, nombreRol) ? PERMISO_POR_ROL[nombreRol] : null;
+  if (permiso && usuario.coincidenciasNombreRol !== 1) {
+    throw new CxpError(`El nombre de rol ${nombreRol} es ambiguo en ROL; revisa duplicados, espacios y mayúsculas.`, 409);
+  }
   return {
     id: usuario.idUsuario,
     nombre: usuario.nombre,
-    roles: [],
-    permisos: [...PERMISOS_PROVISIONALES],
+    roles: usuario.rolActivo && usuario.idRol != null ? [usuario.idRol] : [],
+    permisos: permiso && usuario.idRol != null ? [permiso] : [],
   };
 }
 
@@ -71,6 +78,14 @@ export const resolverActor = createResolverActor();
 /** Exige un actor resuelto por resolverActor. */
 export const exigirActor: RequestHandler = (_req, res, next) => {
   if (!cxpActor(res)) return next(new CxpError('Selecciona el usuario con el que estás operando', 401));
+  next();
+};
+
+/** En RF07–RF10 se requiere un rol activo; cada acción exige además su capacidad. */
+export const exigirRolProceso: RequestHandler = (_req, res, next) => {
+  const actor = cxpActor(res);
+  if (!actor) return next(new CxpError('Selecciona el usuario con el que estás operando', 401));
+  if (!actor.roles.length) return next(new CxpError('El usuario seleccionado no tiene un rol activo para procesos de pago', 401));
   next();
 };
 
