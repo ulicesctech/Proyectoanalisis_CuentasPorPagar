@@ -1,4 +1,3 @@
-import { CxpCrudPage } from '../components/CxpCrudPage';
-import { CxpParametroForm } from './components/ParametroForm';
+import { CxpAdministracionPage } from '../administracion/CxpAdministracionPage';
 
-export const CxpParametroPage = () => <CxpCrudPage resource="parametros" Form={CxpParametroForm} />;
+export const CxpParametroPage = () => <CxpAdministracionPage resource="parametros" />;

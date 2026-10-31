@@ -1,8 +1,12 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { CXP_ENTITIES, getCxpEntity, type BandejaProceso, type CxpResource } from '@erp/contracts';
-import { Select, Sidebar } from '../../shared/ui-kit';
+import { Select } from '../../shared/ui-kit';
 import { CxpTopBar } from './components/CxpTopBar';
+import { CxpBackToMenu } from './components/CxpBackToMenu';
+import { CxpSidebar } from './components/CxpSidebar';
+import { X } from 'lucide-react';
 import { useOperador } from './operador/operador';
 import { registrarVisita } from './navegacion/recientes';
 import './cxp.css';
@@ -32,19 +36,35 @@ const screens = [
 ];
 
 /** Sin resource ni screen se renderiza como página de inicio (sin sub-pestañas). */
-export function CxpLayout({ resource, screen, children, bandeja, searchQuery, onSearchChange }: {
+export function CxpLayout({ resource, screen, children, bandeja, searchQuery, onSearchChange, menuAccess = true }: {
   resource?: CxpResource; screen?: CxpScreen; children: ReactNode; bandeja?: BandejaProceso;
   searchQuery?: string; onSearchChange?: (value: string) => void;
+  menuAccess?: boolean;
 }) {
   const navigate = useNavigate();
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const mobileRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const previous = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    mobileRef.current?.querySelector<HTMLElement>('button')?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setMobileMenu(false); }
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(mobileRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? []).filter(el => el.getClientRects().length);
+      const first=controls[0],last=controls[controls.length-1];
+      if (event.shiftKey && document.activeElement===first) {event.preventDefault();last?.focus();}
+      else if (!event.shiftKey && document.activeElement===last) {event.preventDefault();first?.focus();}
+    };
+    document.addEventListener('keydown',key);
+    return () => {document.removeEventListener('keydown',key);document.body.style.overflow=previous;opener?.focus();};
+  },[mobileMenu]);
   const { pathname } = useLocation();
-  const { actor, actorId } = useOperador();
+  const mainPage = !!(resource || screen) && [ `/cxp/${resource ?? screen}`, `/cxp/${resource}/registros` ].includes(pathname);
+  const { actorId } = useOperador();
   // Alimenta "Continuar donde lo dejaste" del inicio y el buscador de pantallas.
   useEffect(() => { registrarVisita(actorId, pathname); }, [actorId, pathname]);
-  // El Sidebar es de solo lectura (components/ui): solo muestra con qué usuario se opera.
-  const sidebarUser = actor
-    ? { name: actor.nombre, role: actor.nombreRol ?? 'Rol activo', initials: actor.nombre.split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || 'CP' }
-    : { name: 'Sin usuario CXP', role: 'Acceso restringido', initials: 'CP' };
   const active = bandeja ?? resource ?? screen;
   const group = resource ? getCxpEntity(resource)!.group : screen ? CXP_SCREENS.find(item => item.path === screen)!.group : undefined;
   const navigation = !group || HOME_GROUPS.includes(group) ? [] : group === 'Pagos'
@@ -57,11 +77,17 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
     ]
     : screens.filter(item => item.group === group);
   return <div className={`cxp-shell ${group === 'Pagos' ? 'cxp-payments-shell' : ''} flex h-screen w-screen overflow-hidden bg-slate-50`}>
-    <Sidebar activeModule="cuentas_pagar" user={sidebarUser}
-      onSelectModule={(module: string) => navigate(module === 'cuentas_pagar' ? '/cxp' : module === 'cuentas_cobrar' ? '/cxc/organizacion/empresas' : '/')} />
+    <CxpSidebar />
+    {mobileMenu && createPortal(<div className="fixed inset-0 z-[9999] bg-slate-950/40" onMouseDown={event => {if(event.target===event.currentTarget)setMobileMenu(false);}}>
+      <section ref={mobileRef} role="dialog" aria-modal="true" aria-label="Menú de Cuentas por pagar" className="cxp-mobile-menu relative h-dvh w-72 max-w-full bg-slate-900">
+        <button aria-label="Cerrar menú" title="Cerrar menú" className="absolute right-3 top-4 z-10 rounded p-2 text-slate-300 hover:bg-slate-800" onClick={() => setMobileMenu(false)}><X size={20}/></button>
+        <CxpSidebar mobile onNavigate={() => setMobileMenu(false)} />
+      </section>
+    </div>,document.body)}
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} />
+      <CxpTopBar searchQuery={searchQuery} onSearchChange={onSearchChange} onOpenMenu={() => setMobileMenu(true)} />
       <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        {menuAccess && mainPage && !bandeja && <div className="mb-4"><CxpBackToMenu /></div>}
         {SHOW_SECTION_NAVIGATION && navigation.length > 0 && <>
           {group !== 'Pagos' && <div className="cxp-mobile-navigation mb-4">
             <Select label="Pantalla" value={active}

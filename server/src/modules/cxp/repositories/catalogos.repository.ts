@@ -77,6 +77,18 @@ export async function listCxpOptions(catalog: string, query: { search?: string; 
 }
 
 /** Etiqueta dentro de la conexión actual: evita abrir otro pool dentro de una transacción. */
+export async function cxpCatalogLabels(connection: Connection, catalog: string, ids: Array<string|number>): Promise<Map<string,string>> {
+  const definition=CXP_CATALOGS[catalog];
+  if(!definition||!ids.length)return new Map();
+  const values=[...new Set(ids.map(String))];
+  if(values.length>200)throw new CxpError('Demasiadas relaciones para consultar');
+  const columns=await labelColumns(connection,catalog);
+  const expression=columns.length?columns.map(c=>`NVL(TO_CHAR(${c}), '')`).join(" || ' · ' || "):`TO_CHAR(${definition.key})`;
+  const binds:BindParameters={};const slots=values.map((id,index)=>{binds[`id${index}`]=definition.numeric?Number(id):id;return`:id${index}`;});
+  const result=await connection.execute<{ID:string|number;LABEL:string}>(`SELECT ${definition.key} ID,${expression} LABEL FROM ${definition.table} WHERE ${definition.key} IN (${slots.join(',')})`,binds,{outFormat:oracledb.OUT_FORMAT_OBJECT});
+  return new Map((result.rows??[]).map(row=>[String(row.ID),row.LABEL]));
+}
+
 export async function cxpCatalogLabel(connection: Connection, catalog: string, id: number): Promise<string> {
   const definition = CXP_CATALOGS[catalog];
   if (!definition) throw new CxpError('Catálogo no encontrado');

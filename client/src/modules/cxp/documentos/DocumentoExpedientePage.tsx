@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, RefreshCw, ShieldCheck, Upload, XCircle } from 'lucide-react';
 import type {
@@ -13,7 +13,9 @@ import { CxpLayout } from '../CxpLayout';
 import { CxpDocumentoForm } from './components/DocumentoForm';
 import { DocumentoComponentesPanel } from './components/DocumentoComponentesPanel';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
-import { DocumentoPagoPanel } from './components/DocumentoPagoPanel';
+import { DocumentoPagosSection } from './components/DocumentoPagosSection';
+import { DocumentoDteUpload } from './components/DocumentoDteUpload';
+import { useCxpFormGuard, useCxpPendingChanges } from '../components/CxpFormGuard';
 import { DocumentoFlow, DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
 
 type ValidationIssue = { campo: string; mensaje: string };
@@ -75,14 +77,14 @@ function nextStep(documento: CxpDocumento, lineas: CxpDocumentoDetalle[], hasDte
       return { title: 'Registrar la decisión requerida', description: 'La validación terminó. Identifica al responsable y completa las aprobaciones configuradas.',
         blocker: 'Mientras espera aprobación no puede recibir aplicaciones.' };
     case 'APROBADA':
-      return { title: 'Aplicar un pago disponible', description: 'Selecciona un pago ejecutado o confirmado, indica el importe y confirma la aplicación.',
+      return { title: 'Gestionar el pago del documento', description: 'Revisa los saldos y reservas y continúa desde la opción disponible.',
         blocker: Number(documento.saldoPendiente) <= 0 ? 'No hay saldo disponible para una nueva aplicación.' : null };
     case 'PARCIALMENTE_PAGADA':
     case 'PENDIENTE_PAGO':
     case 'PROGRAMADA_PAGO':
     case 'CONTABILIZADA':
     case 'PARCIALMENTE_APLICADA':
-      return { title: 'Continuar con el saldo pendiente', description: 'Puedes aplicar otro pago disponible hasta cubrir el saldo.', blocker: null };
+      return { title: 'Continuar con el saldo pendiente', description: 'Consulta los pagos disponibles y los procesos que reservan el saldo restante.', blocker: null };
     case 'CON_DIFERENCIAS':
       return { title: 'Resolver diferencias', description: 'Compara cabecera, líneas y tributos para identificar la discrepancia.',
         blocker: 'Debe resolverse la diferencia antes de continuar.' };
@@ -116,6 +118,9 @@ export function CxpDocumentoExpedientePage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadBusyRef = useRef(false);
+  const clearPendingFile = useCxpPendingChanges(!!uploadFile,uploadBusy);
+  const { discard } = useCxpFormGuard();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -136,6 +141,7 @@ export function CxpDocumentoExpedientePage() {
   const [reversalBusy, setReversalBusy] = useState(false);
   const [reversalError, setReversalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(location.state?.created ? 'Documento recibido. Adjunta el DTE y completa sus líneas y tributos antes de validarlo.' : null);
+  useEffect(()=>{setUploadFile(null);setUploadError(null);setEditing(false);setComponentDirty(false);},[id]);
 
   useEffect(() => {
     let active = true;
@@ -175,8 +181,8 @@ export function CxpDocumentoExpedientePage() {
     setValidationIssues([]);
     setNotice(null);
     try {
-      await apiClient.post(`/cxp/documentos/${id}/validar`, {});
-      setNotice('Documento validado. Ahora está PENDIENTE_APROBACION y espera aprobación.');
+      const result = await apiClient.post<CxpDocumento>(`/cxp/documentos/${id}/validar`, {});
+      setNotice(result?.estado==='PENDIENTE_APROBACION'?'Documento validado y enviado a aprobación. Un usuario autorizado debe revisarlo antes de continuar con el pago.':`La comprobación terminó${result?.estado?`. Estado actual: ${readableState(result.estado)}`:'. Actualiza el expediente para consultar el resultado'}.`);
       setRefresh(value => value + 1);
     } catch (reason) {
       setValidationError(reason instanceof ApiError ? reason.message : 'No se pudo validar el documento.');
@@ -188,18 +194,24 @@ export function CxpDocumentoExpedientePage() {
   };
 
   const uploadDte = async () => {
-    if (!id || !uploadFile || uploadBusy) return;
+    if (!id || !uploadFile || uploadBusyRef.current) return;
+    uploadBusyRef.current=true;
     setUploadBusy(true); setUploadError(null); setNotice(null);
     try {
-      await apiClient.uploadDte(`/cxp/documentos/${id}/archivos`, uploadFile);
-      setUploadFile(null);
+      const created=await apiClient.uploadDte<{idArchivo:number;nombreArchivo:string;tamanoBytes?:number;versionArchivo?:number}>(`/cxp/documentos/${id}/archivos`, uploadFile);
+      setDteFiles(current=>[...current,{idArchivo:created.idArchivo,nombreArchivo:created.nombreArchivo,categoria:'DTE',tamanoBytes:created.tamanoBytes??uploadFile.size,versionArchivo:created.versionArchivo??1,disponible:true}]);
+      setUploadFile(null);clearPendingFile();
       const input = window.document.getElementById('expediente-dte') as HTMLInputElement | null;
       if (input) input.value = '';
       setNotice('DTE adjuntado. Revisa las líneas y los tributos antes de validar.');
-      setRefresh(value => value + 1);
+      // La carga no requiere guardar conceptos y no debe desmontar su captura local.
+      try {
+        const [next,files]=await Promise.all([apiClient.get<CxpDocumentoExpediente>(`/cxp/documentos/${id}/expediente`),apiClient.get<DocumentoDteFile[]>(`/cxp/documentos/${id}/archivos`)]);
+        setExpediente(next);setDteFiles(files);
+      }catch{setNotice('DTE adjuntado correctamente. No se pudo actualizar el listado; consulta los archivos antes de volver a adjuntar.');}
     } catch (reason) {
       setUploadError(reason instanceof ApiError ? reason.message : 'No se pudo adjuntar el DTE.');
-    } finally { setUploadBusy(false); }
+    } finally { uploadBusyRef.current=false;setUploadBusy(false); }
   };
 
   const downloadDte = async (archivo: CxpArchivo) => {
@@ -314,13 +326,15 @@ export function CxpDocumentoExpedientePage() {
           {guide.blocker && <p className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 text-sm text-amber-900">{guide.blocker}</p>}
           {document.estado === 'RECIBIDO' && <div className="flex flex-wrap items-center gap-2 mt-4">
             {!document.idProveedor ? <Button disabled={componentDirty} onClick={() => setEditing(true)}>Completar proveedor</Button>
-              : !hasDte ? <Button disabled={componentDirty} icon={Upload} onClick={() => window.document.getElementById('expediente-dte')?.click()}>Adjuntar DTE</Button>
+              : !hasDte ? null
                 : !expediente.lineas.length ? <a href="#conceptos-documento" className="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Capturar conceptos</a>
                   : <Button icon={ShieldCheck} disabled={validating || componentDirty} onClick={validate}>{validating ? 'Validando…' : componentDirty ? 'Guarda los conceptos antes de validar' : 'Validar documento'}</Button>}
             {hasDte && (!document.idProveedor || !expediente.lineas.length) && <Button variant="secondary" icon={ShieldCheck} disabled={validating || componentDirty} onClick={validate}>{validating ? 'Validando…' : 'Validar documento'}</Button>}
             {document.idProveedor && expediente.lineas.length > 0 && <Button disabled={componentDirty} variant="secondary" onClick={() => setEditing(true)}>Editar cabecera</Button>}
             <a href="#conceptos-documento" className="inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100">Líneas y tributos</a>
           </div>}
+          {document.estado==='RECIBIDO'&&!hasDte&&<DocumentoDteUpload file={uploadFile} busy={uploadBusy} error={uploadError}
+            onFile={file=>{setUploadFile(file);setUploadError(null);}} onUpload={()=>void uploadDte()} conceptsPending={componentDirty} />}
           {document.estado === 'PENDIENTE_APROBACION' && <div className="border-t border-slate-100 mt-4 pt-4 space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_1fr] gap-4 items-start">
               <p className="text-sm text-slate-700">Decisión registrada por el usuario autenticado.</p>
@@ -359,11 +373,10 @@ export function CxpDocumentoExpedientePage() {
             </div>}
             {decisionError && <p role="alert" className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800">{decisionError}</p>}
           </div>}
-          {payableStates.has(document.estado) && Number(document.saldoPendiente) > 0 &&
-            <DocumentoPagoPanel documento={document} onApplied={application => {
+            <DocumentoPagosSection documento={document} onApplied={application => {
               setNotice(`Pago aplicado. El saldo pendiente es ${formatDocumentoMoney(application.saldoPosterior, document.moneda)}.`);
               setRefresh(value => value + 1);
-            }} />}
+            }} />
           {validationError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mt-4 text-sm text-red-800">
             <p className="font-semibold">{validationError}</p>
             {validationIssues.length > 0 && <ul className="list-disc pl-5 mt-2 space-y-1">
@@ -392,14 +405,7 @@ export function CxpDocumentoExpedientePage() {
         <section className="space-y-3" aria-label="Archivos asociados">
           <div><h2 className="font-bold text-slate-900">Archivos <span className="text-slate-400 font-medium">({expediente.archivos.length})</span></h2>
             <p className="text-xs text-slate-500 mt-1">Archivos relacionados con el documento o sus aplicaciones.</p></div>
-          {document.estado === 'RECIBIDO' && !hasDte && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-            <label htmlFor="expediente-dte" className="block text-sm font-semibold text-blue-900">Adjuntar contenido del DTE (PDF o XML)</label>
-            <input id="expediente-dte" type="file" accept=".pdf,.xml,application/pdf,application/xml,text/xml"
-              onChange={event => setUploadFile(event.target.files?.[0] ?? null)} className="block w-full text-sm text-slate-700" />
-            <p className="text-xs text-blue-800">El contenido se conserva con su expediente. Después completa líneas y tributos; la carga no extrae los datos automáticamente.</p>
-            <Button icon={Upload} disabled={!uploadFile || uploadBusy || componentDirty} onClick={uploadDte}>{uploadBusy ? 'Adjuntando…' : 'Adjuntar DTE'}</Button>
-          </div>}
-          {uploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uploadError}</p>}
+          {hasDte&&uploadError&&<p role="alert" className="text-sm text-red-700">{uploadError}</p>}
           <DataTable data={expediente.archivos} emptyText="No hay archivos asociados."
             columns={[
               { header: 'Nombre', accessorKey: 'nombreArchivo' },
@@ -466,7 +472,7 @@ export function CxpDocumentoExpedientePage() {
           </div>
         </Modal>
 
-        <Modal isOpen={editing} onClose={() => setEditing(false)} title="Editar cabecera recibida" size="lg">
+        <Modal isOpen={editing} onClose={() => void discard(()=>setEditing(false))} title="Editar cabecera recibida" size="lg">
           {editing && <CxpDocumentoForm record={document as unknown as CxpRecord} onCancel={() => setEditing(false)} onSuccess={() => {
             setEditing(false); setRefresh(value => value + 1);
           }} />}

@@ -1,4 +1,3 @@
-import { CxpCrudPage } from '../components/CxpCrudPage';
-import { CxpConciliacionProveedorDetalleForm } from './components/ConciliacionProveedorDetalleForm';
+import { CxpAdministracionPage } from '../administracion/CxpAdministracionPage';
 
-export const CxpConciliacionProveedorDetallePage = () => <CxpCrudPage resource="conciliaciones-proveedor-detalle" Form={CxpConciliacionProveedorDetalleForm} />;
+export const CxpConciliacionProveedorDetallePage = () => <CxpAdministracionPage resource="conciliaciones-proveedor-detalle" />;

@@ -1,0 +1,4 @@
+SIMULACION LOCAL - SIN VALIDEZ BANCARIA
+Constancia ficticia para las cuentas monetarias GTQ del banco BI de los 25 proveedores de demostracion.
+Solo para probar CXP en el proyecto universitario. No acredita identidad, titularidad ni una revision humana.
+No corresponde a una operacion de pago ni a un documento del ejercicio original.

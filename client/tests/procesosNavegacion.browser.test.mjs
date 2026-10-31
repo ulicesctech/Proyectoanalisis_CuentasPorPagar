@@ -175,8 +175,11 @@ test('navegación real 6/7/8: resaltado, filtros, contenido, recarga e historial
     await evaluate('history.forward()');
     await until(async () => (await snapshot()).stage === '7', 'Adelante no restauró Finalizado');
     await assertStage(8);
+    // Page.reload responde antes de sustituir el documento. No aceptar filas del DOM anterior.
+    await evaluate('window.cxpNavigationBeforeReload = true');
     await send('Page.reload', { ignoreCache: true });
-    await until(async () => (await snapshot()).rows.includes('CP-TEST-8'), 'Recargar no restauró los registros finalizados');
+    await until(async () => await evaluate('!window.cxpNavigationBeforeReload') &&
+      (await snapshot()).rows.includes('CP-TEST-8'), 'Recargar no restauró los registros finalizados');
     await assertStage(8);
     await capture('finalizado-recargado');
     // Caso reportado: solo un finalizado, sin registros en Ejecución/Aplicación.

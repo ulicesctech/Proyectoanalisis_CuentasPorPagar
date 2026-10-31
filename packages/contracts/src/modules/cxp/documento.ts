@@ -5,6 +5,13 @@ import type { CxpArchivo } from './archivo';
 import type { CxpDocumentoDetalle } from './documento-detalle';
 import type { CxpDocumentoTributo } from './documento-tributo';
 
+export interface CxpDocumentoPagosContexto {
+  reservadoDocumento: number;
+  ordinariosDisponibles: number;
+  motivos: string[];
+  procesos: Array<{ idPago: number; codigo: string; estado: string; monto: number; saldoSinAplicar: number; reservado: number; aplicado: number }>;
+}
+
 export interface CxpDocumento {
   idDocumento: number;
   idProveedor: number | null;

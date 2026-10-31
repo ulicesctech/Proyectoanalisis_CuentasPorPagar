@@ -2,19 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ban, ChevronLeft, ChevronRight, Eye, Pencil, RefreshCw, Search } from 'lucide-react';
 import type { CxpFacturaEspecialDetalle, CxpFacturaEspecialResumen, PaginationMeta } from '@erp/contracts';
-import { Modal } from '../../../../shared/components';
-import { Button, DataTable, Select, TextInput } from '../../../../shared/ui-kit';
+import { CxpCaptureDialog } from '../../components/CxpCaptureDialog';
+import { DataTable, Select, TextInput } from '../../../../shared/ui-kit';
+import { CxpButton as Button } from '../../components/CxpButton';
+import { DocumentoCatalogPicker } from '../../documentos/components/DocumentoCatalogPicker';
 import { errorDe, facturasEspecialesApi, formatoFecha, formatoMonto } from '../api';
 import { AccionDialog } from './AccionDialog';
 import { ETAPAS, EtapaBadge } from './Etapa';
 import { FacturaEspecialForm } from './FacturaEspecialForm';
+import { useCxpFormGuard } from '../../components/CxpFormGuard';
 
 // Mismo estilo que los botones de fila del resto de CXP (CxpCrudPage).
 const ICONO = 'p-2 rounded-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 /** Etapas desde las que el flujo permite anular (en emitidas, el servidor exige que no haya pagos aplicados). */
 const ANULABLE = ['PREPARACION', 'RECHAZADA', 'APROBADA', 'EMITIDA'];
 
-export function useFacturasEspeciales(etapa: string, search: string, page: number) {
+export function useFacturasEspeciales(etapa: string, search: string, page: number, idProveedor = '') {
   const [data, setData] = useState<CxpFacturaEspecialResumen[]>([]);
   const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [isLoading, setIsLoading] = useState(true);
@@ -24,12 +27,12 @@ export function useFacturasEspeciales(etapa: string, search: string, page: numbe
   useEffect(() => {
     let active = true;
     setIsLoading(true);
-    facturasEspecialesApi.list({ page, search, etapa: etapa || undefined })
+    facturasEspecialesApi.list({ page, search, etapa: etapa || undefined, idProveedor: idProveedor || undefined })
       .then(result => { if (active) { setData(result.data); setMeta({ ...result.meta, totalPages: Math.max(1, result.meta.totalPages) }); setError(null); } })
       .catch(reason => { if (active) { setData([]); setError(errorDe(reason).mensaje); } })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
-  }, [etapa, search, page, refresh]);
+  }, [etapa, search, page, refresh, idProveedor]);
   return { data, meta, isLoading, error, refetch };
 }
 
@@ -48,8 +51,13 @@ export function ListadoFacturas({ etapas, etapaInicial = '', acciones, accionesE
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const { data, meta, isLoading, error, refetch } = useFacturasEspeciales(etapa, search, page);
+  const [idProveedor, setIdProveedor] = useState('');
+  const { data, meta, isLoading, error, refetch } = useFacturasEspeciales(etapa, search, page, idProveedor);
+  useEffect(() => { if (!isLoading && !error && page > meta.totalPages) setPage(Math.max(1,meta.totalPages)); },[page,meta.totalPages,isLoading,error]);
   const [editando, setEditando] = useState<CxpFacturaEspecialDetalle | null>(null);
+  const [formStatus, setFormStatus] = useState({dirty:false,busy:false});
+  const { discard } = useCxpFormGuard();
+  const closeEdit = () => { if (!formStatus.busy) void discard(() => setEditando(null), formStatus.dirty); };
   const [abriendo, setAbriendo] = useState(false);
   const [anulando, setAnulando] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -72,10 +80,13 @@ export function ListadoFacturas({ etapas, etapaInicial = '', acciones, accionesE
     <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-end gap-3">
       <TextInput id="fe-buscar" icon={Search} label="Buscar" placeholder="Número, proveedor, NIT, constancia o referencia…" value={searchInput}
         onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} className="flex-1 min-w-56" />
+      <div className="w-full sm:w-64"><DocumentoCatalogPicker id="fe-filtro-proveedor" label="Proveedor" catalog="proveedores" value={idProveedor} placeholder="Todos los proveedores"
+        onChange={value => { setIdProveedor(value); setPage(1); }} /></div>
       <Select id="fe-etapa" label="Etapa" value={etapa} placeholder="" className="sm:max-w-64"
         options={etapas.map(value => ({ value, label: value === '' ? 'Todas' : value === 'BANDEJA' ? 'Revisión y aprobación' : ETAPAS[value as keyof typeof ETAPAS].label }))}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) => { setEtapa(event.target.value); setPage(1); }} />
       <Button icon={RefreshCw} variant="secondary" onClick={refetch} disabled={isLoading}>Actualizar</Button>
+      <Button variant="ghost" disabled={!searchInput && !idProveedor && etapa === etapaInicial} onClick={() => {setSearchInput('');setSearch('');setIdProveedor('');setEtapa(etapaInicial);setPage(1);}}>Limpiar filtros</Button>
     </div>
     {(error || errorAccion) && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{errorAccion || error}</p>}
     {aviso && !errorAccion && <p role="status" className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm rounded-lg p-3">{aviso}</p>}
@@ -119,11 +130,11 @@ export function ListadoFacturas({ etapas, etapaInicial = '', acciones, accionesE
         <Button variant="secondary" icon={ChevronRight} disabled={page >= meta.totalPages || isLoading} onClick={() => setPage(value => value + 1)}>Siguiente</Button>
       </div>
     </div>
-    <Modal isOpen={!!editando} onClose={() => setEditando(null)} size="lg" title={`Editar · ${editando?.serie}-${editando?.numeroDocumento}`}
+    {editando && <CxpCaptureDialog onClose={closeEdit} busy={formStatus.busy} title={`Editar · ${editando.serie}-${editando.numeroDocumento}`}
       description="Los tributos se recalculan con las reglas vigentes en la fecha de la operación.">
-      {editando && <FacturaEspecialForm factura={editando} onCancel={() => setEditando(null)}
-        onSuccess={resultado => { setEditando(null); setAviso(`${resultado.factura.serie}-${resultado.factura.numeroDocumento}: ${resultado.mensaje}`); refetch(); }} />}
-    </Modal>
+      <FacturaEspecialForm factura={editando} onCancel={closeEdit} onStatusChange={setFormStatus}
+        onSuccess={resultado => { setEditando(null); setAviso(`${resultado.factura.serie}-${resultado.factura.numeroDocumento}: ${resultado.mensaje}`); refetch(); }} />
+    </CxpCaptureDialog>}
     <AccionDialog idDocumento={anulando ?? 0} accion={anulando ? 'anular' : null} onClose={() => setAnulando(null)}
       onDone={resultado => { setAnulando(null); setAviso(`${resultado.factura.serie}-${resultado.factura.numeroDocumento}: ${resultado.mensaje}`); refetch(); }} />
   </div>;

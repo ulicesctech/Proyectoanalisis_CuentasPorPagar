@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '../api';
 import { Button, TextInput } from '../../../shared/ui-kit';
 import { clearCxpCatalogCache } from '../components/RelationSelect';
+import { CxpBackToMenu } from '../components/CxpBackToMenu';
 
 interface ProveedorItem {
   idProveedor: number;
@@ -71,6 +72,7 @@ export function CxpProveedorPage() {
 
   return (
     <div className="space-y-6">
+      <CxpBackToMenu />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-5">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Proveedores CxP</h1>

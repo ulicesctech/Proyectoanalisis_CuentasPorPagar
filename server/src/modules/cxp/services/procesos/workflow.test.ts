@@ -30,6 +30,36 @@ function reviewProcess(): ProcesoPago {
   };
 }
 
+test('crear contraseña deriva sucursal, moneda y saldo del servidor y reserva dentro de la transacción', async () => {
+  const doc: CxpRecord = { idDocumento: 91, idProveedor: 8, idSucursal: 3, moneda: 'USD', tipoCambio: 7.5,
+    naturaleza: 'D', estado: 'APROBADA', posibleDuplicado: 'N', saldoPendiente: 123.45, tipoDocumento: 'FACTURA', numeroDocumento: 'F-91' };
+  const trace: string[] = [];
+  let saved: ProcesoPago;
+  let reserveFails = false;
+  const tx = {
+    actorExists: async()=>{}, byKey: async()=>null, providerName: async()=> 'Proveedor servidor',
+    row: async(resource: string,id: number)=>resource==='documentos' ? doc : {tipoTitular:id===1?'EMPRESA':'PROVEEDOR',idProveedor:8,estado:'ACTIVA',estadoAprobacion:'APROBADA',moneda:'USD'},
+    openPeriod: async(branch: number)=> {assert.equal(branch,3);trace.push('periodo');},
+    paymentMethod: async()=>({id:1,nombre:'Transferencia',tipo:'TRANSFERENCIA'}),
+    insert: async(p: ProcesoPago)=> {saved=p;trace.push('insert');return 10;},
+    reserve: async(p: ProcesoPago)=>{assert.equal(p.documentos[0].importe,123.45);trace.push('reserve');if(reserveFails)throw new Error('Reserva concurrente');},
+    save:async()=>{trace.push('save');}, get:async()=>saved,
+  } as unknown as ProcesoTx;
+  const store=storeFor(tx);
+  store.transaction=async fn=>{trace.push('begin');try{const p=await fn(tx);trace.push('commit');return p;}catch(e){trace.push('rollback');throw e;}};
+  const workflow=createPaymentWorkflow(store,()=>new Date('2026-10-30T12:00:00Z'));
+  const input={idProveedor:8,documentos:[91],idCuentaOrigen:1,idCuentaDestino:2,idFormaPago:1,fecha:'2026-10-30',clave:'d2fcde64-787b-44a1-9836-bc4e5340b07a'};
+  const p=await workflow.create(input,actor(7,[1]));
+  assert.equal(p.sucursal,3);assert.equal(p.moneda,'USD');assert.equal(p.tipoCambio,7.5);assert.equal(p.total,123.45);
+  assert.deepEqual(trace,['begin','periodo','insert','reserve','save','commit']);
+  trace.length=0;reserveFails=true;
+  await assert.rejects(workflow.create(input,actor(7,[1])),/Reserva concurrente/);
+  assert.deepEqual(trace,['begin','periodo','insert','reserve','rollback']);
+  trace.length=0;doc.estado='RECIBIDO';
+  await assert.rejects(workflow.create(input,actor(7,[1])),{status:409});
+  assert.deepEqual(trace,['begin','rollback']);
+});
+
 test('RF10: APROBAR también exige el rol de la posición creada por la regla', () => {
   const process = reviewProcess();
   assert.throws(() => assertApprovalSegregation(process, process.aprobaciones[0], actor(5, [8])), { status: 403 });

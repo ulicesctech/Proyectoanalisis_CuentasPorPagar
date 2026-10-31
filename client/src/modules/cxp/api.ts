@@ -1,5 +1,5 @@
 // Cliente HTTP de CXP; la sesión viaja en una cookie HttpOnly.
-import { API_BASE_URL, ApiError, apiRequest, buildQueryString } from '../../shared/api';
+import { API_BASE_URL, ApiError, apiClient as sharedApiClient, apiRequest, buildQueryString } from '../../shared/api';
 
 export { API_BASE_URL, ApiError, buildQueryString };
 
@@ -24,13 +24,5 @@ export const apiClient = {
     method: 'POST', body: file,
     headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
   }),
-  async download(path: string): Promise<Blob> {
-    const response = await fetch(`${API_BASE_URL}${path}`, { headers: cxpHeaders(), credentials: 'include' });
-    if (response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new ApiError(body?.error ?? `Error ${response.status}`, response.status, body?.details);
-    }
-    return response.blob();
-  },
+  download: sharedApiClient.download,
 };

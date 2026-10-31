@@ -56,14 +56,14 @@ export const CXP_AREAS: AreaConfig[] = [
       { label: 'Aplicaciones', path: '/cxp/aplicaciones' },
     ] },
   { id: 'control', title: 'Control', icon: Gauge, color: 'amber', path: '/cxp/reglas-aprobacion',
-    description: 'Reglas de aprobación, decisiones registradas, bitácora de eventos y archivos.',
+    description: 'Reglas de aprobación, decisiones, seguimiento y evidencias.',
     links: [
       { label: 'Aprobaciones', path: '/cxp/aprobaciones/registros' },
       { label: 'Eventos', path: '/cxp/eventos' },
       { label: 'Archivos', path: '/cxp/archivos' },
     ] },
   { id: 'conciliaciones', title: 'Conciliaciones', icon: Scale, color: 'cyan', path: '/cxp/conciliaciones-proveedor',
-    description: 'Conciliación con proveedores y de pagos con bancos.',
+    description: 'Estados de cuenta de proveedores y referencias de pagos.',
     links: [
       { label: 'Detalle', path: '/cxp/conciliaciones-proveedor-detalle' },
       { label: 'Conciliaciones de pago', path: '/cxp/conciliaciones-pago' },
@@ -79,10 +79,10 @@ export const CXP_AREAS: AreaConfig[] = [
 
 /** Catálogos del grupo Configuración, en el orden en que se muestran. */
 export const CXP_CONFIGURACION: { path: string; description: string }[] = [
-  { path: '/cxp/parametros', description: 'Valores generales' },
-  { path: '/cxp/periodos', description: 'Apertura y cierre' },
+  { path: '/cxp/parametros', description: 'Valores y reglas generales' },
+  { path: '/cxp/periodos', description: 'Cobertura de fechas por sucursal para programar pagos' },
   { path: '/cxp/proveedores', description: 'Catálogo de proveedores' },
-  { path: '/cxp/cuentas-bancarias', description: 'Cuentas para pagos' },
+  { path: '/cxp/cuentas-bancarias', description: 'Orígenes de empresa, destinos de proveedor y aprobación CXP' },
   { path: '/cxp/compromisos', description: 'Compromisos de pago' },
 ];
 

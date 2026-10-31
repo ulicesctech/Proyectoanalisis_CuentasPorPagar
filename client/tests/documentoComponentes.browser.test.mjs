@@ -45,6 +45,8 @@ test('captura operativa: aceptación, edición, recuperación, tributos generale
   const api=createServer(async(req,res)=>{
     res.setHeader('Access-Control-Allow-Origin',req.headers.origin??'*');res.setHeader('Access-Control-Allow-Credentials','true');res.setHeader('Access-Control-Allow-Headers','Content-Type, X-CSRF-Token');res.setHeader('Access-Control-Allow-Methods','GET,PATCH,OPTIONS');res.setHeader('Content-Type','application/json');
     if(req.method==='OPTIONS'){res.end();return;} const url=new URL(req.url,'http://localhost'); const json=value=>res.end(JSON.stringify(value));
+    if (url.pathname.endsWith('/contexto-pagos')) return json({reservadoDocumento:0,ordinariosDisponibles:0,motivos:[],procesos:[]});
+    if (url.pathname === '/api/cxp/facturas-especiales/configuracion') return json({fechaDocumento:'2026-10-30',moneda:'GTQ',serie:'FESP',puedeRegistrar:true,impedimentos:[],advertencias:[],reglasVigentes:1});
     if(url.pathname==='/api/auth/session')return json({username:'operador.simulado',name:'Operador simulado',mustChangePassword:false,actor:{id:7,nombre:'Operador simulado',roles:[1],permisos:['CREAR']},csrfToken:'prueba'});
     if(url.pathname==='/api/cxp/documentos/99/componentes'){
       if(req.method==='GET')return json(context);
@@ -59,6 +61,8 @@ test('captura operativa: aceptación, edición, recuperación, tributos generale
     if(url.pathname==='/api/cxp/documentos/99/aprobacion')return json({reglas:[],decisiones:[],actor:null});
     if(url.pathname==='/api/cxp/documentos/99/archivos')return json([]);
     if(url.pathname==='/api/cxp/documentos/99/pagos-disponibles')return json([]);
+    if (url.pathname === '/api/cxp/proveedores/identidad') { const id=Number(url.searchParams.get('id')||1); return json({proveedores:[{idProveedor:id,nit:id===1?'123-1':'456-2',nombre:id===1?'Proveedor Alfa':'Proveedor Beta',activo:true}],coincidenciasExactas:1,limitado:false}); }
+    if (url.pathname.endsWith('/opciones-tributos')) return json({identificaciones:[],reglas:[]});
     if(url.pathname.startsWith('/api/cxp/catalogos/'))return json([{id:1,label:'Proveedor simulado'}]);
     unexpected.push(req.method+' '+url.pathname);res.statusCode=404;json({error:'Ruta no simulada'});
   });
@@ -121,14 +125,15 @@ test('captura operativa: aceptación, edición, recuperación, tributos generale
     await send('Page.navigate',{url:'http://127.0.0.1:'+port+'/cxp/documentos/99'});
     await until(()=>evaluate(`!!document.querySelector('[aria-label="Captura de conceptos"] table')`),'No abrió conceptos');
     await evaluate('window.confirm=()=>true');
-    const button=async(text,scope='document')=>{await evaluate('[...'+scope+'.querySelectorAll("button")].find(el=>el.textContent.trim()==='+JSON.stringify(text)+').click()');await delay(100)};
-    const rowAction=async(name,text)=>{await evaluate(`([...document.querySelectorAll('table[aria-label="Conceptos del documento"] tbody tr')].find(row=>row.textContent.includes(${JSON.stringify(name)}))).querySelectorAll('button')[${({'Editar':0,'Agregar tributo':1,'Quitar':2}[text])}].click()`);await delay(100)};
+    const acceptDialog=async()=>{if(await evaluate(`!!document.querySelector('[data-cxp-confirm]')`)){await evaluate(`document.querySelector('[data-cxp-confirm] button').click()`);await delay(140);}};
+    const button=async(text,scope='document')=>{await evaluate('[...'+scope+'.querySelectorAll("button")].find(el=>el.textContent.trim()==='+JSON.stringify(text)+').click()');await delay(100);await acceptDialog();};
+    const rowAction=async(name,text)=>{await evaluate(`([...document.querySelectorAll('table[aria-label="Conceptos del documento"] tbody tr')].find(row=>row.textContent.includes(${JSON.stringify(name)}))).querySelectorAll('button')[${({'Editar':0,'Agregar tributo':1,'Quitar':2}[text])}].click()`);await delay(100);await acceptDialog();};
     const taxAction=async(index)=>{await evaluate(`document.querySelectorAll('table[aria-label="Tributos de conceptos"] tbody tr')[${index}].querySelector('button').click()`);await delay(100)};
     const addLine=async(name,quantity,price,discount)=>{await button('Agregar línea');await input('concepto-descripcion',name,true);await input('concepto-cantidad',quantity,true);await input('concepto-precioUnitario',price,true);await input('concepto-descuento',discount,true);await click('Aplicar línea');};
     const addTax=async(name)=>{await rowAction(name,'Agregar tributo');assert.match(await evaluate('document.getElementById("concepto-aplicacion").selectedOptions[0].textContent'),new RegExp(name));await input('concepto-codigoTributo','PRUEBA10',true);await input('concepto-nombreTributo','Impuesto ficticio 10 %',true);await input('concepto-porcentaje','10',true);assert.equal(await value('concepto-monto'),name==='Teclados'?'30':'25');assert.equal(await evaluate('document.getElementById("concepto-monto").disabled'),true);await capture('formulario-tributo');await click('Aplicar tributo');};
     await button('Agregar línea');assert.equal(await evaluate(`document.querySelectorAll('[role="dialog"] nav').length`),0);
     await input('concepto-cantidad','-1');assert.equal(await invalid('concepto-cantidad'),true);
-    await click('Aplicar línea');assert.equal(await invalid('concepto-descripcion'),true);assert.equal(writes.length,0);await click('Cancelar');
+    await click('Aplicar línea');assert.equal(await invalid('concepto-descripcion'),true);assert.equal(writes.length,0);await click('Cancelar');await acceptDialog();
     await addLine('Teclados','2','150','0');await addTax('Teclados');await addLine('Mouse','3','100','50');await addTax('Mouse');
     assert.equal(writes.length,0);await evaluate(`document.getElementById('conceptos-documento').scrollIntoView({block:'start'})`);await capture('aceptacion-antes-guardar');
     assert.match(await evaluate(`document.querySelector('table[aria-label="Declarado y calculado"]').textContent`),/GTQ 605.00/);
@@ -141,7 +146,7 @@ test('captura operativa: aceptación, edición, recuperación, tributos generale
     await taxAction(0);await input('concepto-montoRecuperable','20',true);await input('concepto-montoNoRecuperable','25',true);await click('Aplicar tributo');
     await button('Agregar tributo general');await input('concepto-tipoTributo','RETENCION',true);assert.equal(await evaluate('document.getElementById("concepto-tratamiento")===null'),true);await input('concepto-codigoTributo','RET-PRUEBA',true);await input('concepto-nombreTributo','Retención ficticia 5 %',true);await input('concepto-porcentaje','5',true);assert.equal(await value('concepto-monto'),'35');await click('Aplicar tributo');
     await button('Agregar tributo general');await input('concepto-codigoTributo','INC-PRUEBA',true);await input('concepto-nombreTributo','Impuesto incluido prueba',true);await input('concepto-porcentaje','10',true);await input('concepto-incluidoPrecio','S',true);await click('Aplicar tributo');assert.match(await evaluate(`document.querySelector('[aria-label="Captura de conceptos"]').textContent`),/incluidos en precio/);
-    await evaluate(`document.querySelectorAll('table[aria-label="Tributos de conceptos"] tbody tr')[3].querySelectorAll('button')[1].click()`);await delay(80);
+    await evaluate(`document.querySelectorAll('table[aria-label="Tributos de conceptos"] tbody tr')[3].querySelectorAll('button')[1].click()`);await delay(80);await acceptDialog();
     await rowAction('Mouse','Quitar');assert.equal(await evaluate(`document.querySelectorAll('table[aria-label="Conceptos del documento"] tbody tr').length`),1);assert.equal(await evaluate(`document.querySelectorAll('table[aria-label="Tributos de conceptos"] tbody tr').length`),2);
     await evaluate(`document.getElementById('conceptos-documento').scrollIntoView({block:'start'})`);await capture('edicion-parcial-retencion-y-eliminacion');await button('Guardar y adoptar totales calculados');await until(()=>writes.length===3,'No guardó edición');assert.deepEqual(writes[2].confirmarEliminaciones,[2]);assert.equal(context.documento.totalNeto,472.5);assert.equal(context.tributos[0].datos.montoRecuperable,20);assert.equal(context.tributos[0].datos.montoNoRecuperable,25);
     await send('Page.reload',{ignoreCache:true});await until(()=>evaluate(`document.querySelector('table[aria-label="Declarado y calculado"]')?.textContent.includes('472.50')`),'No conservó totales al recargar');

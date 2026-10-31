@@ -4,6 +4,7 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../../layouts/MainLayout';
 import { RequireCxpSession } from './auth/AuthPages';
 import { CxpHomePage } from './home/CxpHomePage';
+import { CxpFormGuardProvider } from './components/CxpFormGuard';
 
 // --- Configuración ---
 import { CxpParametroPage } from './configuracion/ParametroPage';
@@ -99,5 +100,5 @@ const cxpPages: RouteObject[] = [
 ];
 export const cxpRoutes: RouteObject[] = cxpPages.map(route => ({
   ...route,
-  element: <RequireCxpSession><MainLayout>{route.element}</MainLayout></RequireCxpSession>,
+  element: <RequireCxpSession><CxpFormGuardProvider><MainLayout>{route.element}</MainLayout></CxpFormGuardProvider></RequireCxpSession>,
 }));

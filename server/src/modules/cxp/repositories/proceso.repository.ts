@@ -20,6 +20,7 @@ import {
   paymentMethod,
 } from './proceso-bank.repository';
 import { getConnection } from '../../../config/database';
+import { listEligibleProcessDocuments } from './proceso-documentos.repository';
 import { createCxpRepository, withCxpTransaction } from './crud.repository';
 import { CxpError } from '../services/errors';
 import { applyCxpMovement } from '../services/application.service';
@@ -700,48 +701,7 @@ export const procesoStore: ProcesoStore = {
   async options(search = '', proveedor?: number) {
     const connection = await getConnection();
     try {
-      const searchText = search.trim() ? `%${search.trim().toUpperCase()}%` : null;
-      const docs = await connection.execute<{
-        ID_DOCUMENTO: number;
-        NUMERO_DOCUMENTO: string | null;
-        NO_FACTURA_COMPRA: string | null;
-        ID_PROVEEDOR: number;
-        ID_SUCURSAL: number;
-        MONEDA: string;
-        SALDO_PENDIENTE: number;
-      }>(
-        `SELECT D.ID_DOCUMENTO, D.NUMERO_DOCUMENTO, D.NO_FACTURA_COMPRA,
-                D.ID_PROVEEDOR, D.ID_SUCURSAL, D.MONEDA, D.SALDO_PENDIENTE
-           FROM CXP_DOCUMENTO D
-          WHERE :provider IS NOT NULL
-            AND D.ID_PROVEEDOR = :provider
-            AND (:search IS NULL
-                 OR UPPER(NVL(D.NUMERO_DOCUMENTO, D.NO_FACTURA_COMPRA)) LIKE :search
-                 OR TO_CHAR(D.ID_DOCUMENTO) LIKE :search)
-            AND D.NATURALEZA = 'D'
-            AND D.POSIBLE_DUPLICADO = 'N'
-            AND D.ESTADO IN ('APROBADA', 'CONTABILIZADA', 'PENDIENTE_PAGO', 'PARCIALMENTE_PAGADA', 'VENCIDA')
-            AND NOT (D.TIPO_DOCUMENTO = 'FACTURA_ESPECIAL' AND D.ESTADO = 'APROBADA')
-            AND D.TIPO_DOCUMENTO <> 'GASTO_CAJA_CHICA'
-            AND D.SALDO_PENDIENTE > 0
-            AND NOT EXISTS (
-              SELECT 1
-                FROM CXP_APLICACION A
-                JOIN CXP_PAGO P ON P.ID_PAGO = A.ID_PAGO
-               WHERE A.ID_DOCUMENTO_DESTINO = D.ID_DOCUMENTO
-                 AND A.TIPO_APLICACION = 'PAGO'
-                 AND (A.ESTADO = 'PENDIENTE'
-                      OR (A.ESTADO = 'APLICADA' AND P.CODIGO_PAGO LIKE 'CP-%'))
-                 AND P.ESTADO NOT IN ('RECHAZADO', 'DEVUELTO', 'ANULADO')
-            )
-          ORDER BY D.ID_DOCUMENTO DESC
-          FETCH FIRST 200 ROWS ONLY`,
-        {
-          provider: { val: proveedor ?? null, type: oracledb.NUMBER },
-          search: { val: searchText, type: oracledb.STRING },
-        },
-        object,
-      );
+      const documentos = await listEligibleProcessDocuments(connection, search, proveedor);
 
       const accounts = await connection.execute<{
         ID_CUENTA_BANCARIA: number;
@@ -784,14 +744,7 @@ export const procesoStore: ProcesoStore = {
 
       const accountRows = accounts.rows ?? [];
       const result: OpcionesProceso = {
-        documentos: (docs.rows ?? []).map(document => ({
-          id: document.ID_DOCUMENTO,
-          nombre: document.NUMERO_DOCUMENTO || document.NO_FACTURA_COMPRA || String(document.ID_DOCUMENTO),
-          proveedor: document.ID_PROVEEDOR,
-          sucursal: document.ID_SUCURSAL,
-          moneda: document.MONEDA.trim(),
-          saldo: Number(document.SALDO_PENDIENTE),
-        })),
+        documentos,
         origenes: accountRows
           .filter(account => account.TIPO_TITULAR === 'EMPRESA')
           .map(account => ({

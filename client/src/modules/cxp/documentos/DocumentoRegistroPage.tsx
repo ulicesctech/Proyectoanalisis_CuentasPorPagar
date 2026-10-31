@@ -8,11 +8,16 @@ import {
 } from '@erp/contracts';
 import { apiClient, ApiError } from '../api';
 import { getOperadorId } from '../operador/operador';
-import { Button, Select, TextArea, TextInput } from '../../../shared/ui-kit';
+import { Select, TextArea, TextInput } from '../../../shared/ui-kit';
+import { CxpButton as Button } from '../components/CxpButton';
+import { CxpCaptureSteps } from '../components/CxpSteps';
+import { CxpCaptureSectionHeading, captureTitleClass, captureSubtitleClass, captureFooterClass } from '../components/CxpCaptureSection';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { documentoRegistroPayload } from './documentoRegistroPayload';
 import { CxpActorReadOnly } from '../components/CxpActorReadOnly';
 import { useAuth } from '../auth/session';
+import { useCxpFormGuard, useCxpPendingChanges } from '../components/CxpFormGuard';
+import { CxpNitInput, useCxpProveedorIdentity } from '../components/CxpProveedorIdentity';
 import { DocumentoMonedaControl, useDocumentoMonedas } from './components/DocumentoMonedaControl';
 import { cambioDocumento, documentoAmountHelp, documentoClearlyInvalid, documentoFormErrors, documentoInput, documentoPreview } from './documentoCaptura';
 import { DocumentoTotales } from './components/DocumentoTotales';
@@ -63,6 +68,7 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
   // Se precarga con el usuario operativo: el servidor rechaza otro distinto.
   const [values, setValues] = useState<Values>(() => initialDocumentoRegistroValues(getOperadorId()));
   const [catalogLabels, setCatalogLabels] = useState({ idProveedor: '', idSucursal: '', creadoPor: '', idCondicionCredito: '' });
+  const [independentIssuer, setIndependentIssuer] = useState(false);
   const [remoteErrors, setRemoteErrors] = useState<Errors>({});
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const allErrors = documentoFormErrors(values, Number(session?.actor?.id), { wizard: true, monedas: currencyConfig });
@@ -75,13 +81,16 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
   }, 0);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const baseline = useRef(JSON.stringify(values));
+  const dirty = JSON.stringify(values) !== baseline.current;
+  const clearPending = useCxpPendingChanges(dirty, saving);
+  const { discard } = useCxpFormGuard();
   const [dueDate, setDueDate] = useState<DueDatePreview | null>(null);
   const [dueDateLoading, setDueDateLoading] = useState(false);
 
   const close = () => {
     if (savingRef.current) return;
-    if (values !== initialValues && !window.confirm('Hay datos sin guardar. ¿Cerrar el registro?')) return;
-    onClose();
+    void discard(onClose, dirty);
   };
 
   useEffect(() => {
@@ -98,6 +107,7 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('[data-cxp-confirm]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         close();
@@ -165,6 +175,11 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
     touch(name);
     setCatalogLabels(current => ({ ...current, [name]: label }));
   };
+  const identity = useCxpProveedorIdentity({idProveedor:values.idProveedor,nit:values.nitEmisor,independent:independentIssuer,
+    onNit:value=>change('nitEmisor',value), onSelect:(supplier,replaceNit)=>{
+      setValues(current=>({...current,idProveedor:supplier?String(supplier.idProveedor):'',...(supplier&&replaceNit?{nitEmisor:supplier.nit??''}:{})}));
+      setCatalogLabels(current=>({...current,idProveedor:supplier?.nombre??''}));setRemoteErrors({});
+    }});
   const advance = () => {
     const found: Errors = Object.fromEntries(Object.entries(allErrors)
       .filter(([name]) => fieldsForStep(step).includes(name as Field)));
@@ -220,6 +235,7 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
     setSaving(true); setFormError(null);
     try {
       const created = await apiClient.post<CxpDocumento>('/cxp/documentos', documentoRegistroPayload(input, parsed.data as CxpRecord));
+      baseline.current = JSON.stringify(values); clearPending();
       onSuccess(created);
     } catch (reason) {
       setFormError(reason instanceof ApiError ? reason.message : 'No se pudo registrar el documento. Inténtalo de nuevo.');
@@ -266,24 +282,16 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
         if (Object.prototype.hasOwnProperty.call(initialValues, name)) touch(name);
       }} onSubmit={event => { event.preventDefault(); if (savingRef.current) return; if (step < 2) advance(); else void submit(); }}>
 
-      <nav className="grid grid-cols-3 gap-2" aria-label="Pasos del registro">
-        {steps.map((title, index) => <div key={title} aria-label={title} aria-current={step === index ? 'step' : undefined}
-          className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 min-[480px]:justify-start ${step === index ? 'border-blue-300 bg-blue-50 text-blue-800' : index < step ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500'}`}>
-          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step === index ? 'bg-blue-600 text-white' : index < step ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{index < step ? <Check size={14} /> : index + 1}</span>
-          <span className="hidden text-sm font-semibold sm:inline">{title}</span>
-          <span className="hidden text-xs font-semibold min-[480px]:inline sm:hidden">{index === 0 ? 'Datos' : index === 1 ? 'Importes' : 'Revisión'}</span>
-        </div>)}
-      </nav>
+      <CxpCaptureSteps steps={steps} current={step} label="Pasos del registro" />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px] gap-5 items-start">
-        <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" aria-label={steps[step]}>
-          <div className="mb-5"><h3 ref={stepTitleRef} tabIndex={-1} className="text-lg font-bold text-slate-900 focus:outline-none">{steps[step]}</h3>
-            <p className="text-sm text-slate-500 mt-1">{step === 0 ? 'Identifica el comprobante, su proveedor y quién lo registra.' : step === 1 ? 'Ingresa las fechas y los importes tal como figuran en el DTE.' : 'Confirma los datos antes de crear el documento recibido.'}</p></div>
+        <section className="min-w-0" aria-label={steps[step]}>
+          <div className="mb-5"><h3 ref={stepTitleRef} tabIndex={-1} className={captureTitleClass}>{steps[step]}</h3>
+            <p className={captureSubtitleClass}>{step === 0 ? 'Identifica el comprobante, su proveedor y quién lo registra.' : step === 1 ? 'Ingresa las fechas y los importes tal como figuran en el DTE.' : 'Confirma los datos antes de crear el documento recibido.'}</p></div>
           {formError && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
 
           {step === 0 && <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DocumentoCatalogPicker id="registro-idProveedor" label="Proveedor" catalog="proveedores" value={values.idProveedor} required error={errors.idProveedor} onChange={chooseCatalog('idProveedor')} />
+              <DocumentoCatalogPicker id="registro-idProveedor" label="Proveedor" catalog="proveedores" value={values.idProveedor} required error={errors.idProveedor} onChange={id=>void identity.choose(id)} />
               <DocumentoCatalogPicker id="registro-idSucursal" label="Sucursal" catalog="sucursales" value={values.idSucursal} required error={errors.idSucursal} onChange={chooseCatalog('idSucursal')} />
               {select('tipoDocumento', 'Tipo de documento', choices('tipoDocumento'), true)}
               {select('naturaleza', 'Naturaleza', [{ value: 'D', label: 'Débito · obligación' }, { value: 'C', label: 'Crédito · a favor' }], true)}
@@ -291,11 +299,14 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
               {select('tipoRegistro', 'Tipo de registro', choices('tipoRegistro'), true)}
               {values.tipoRegistro === 'CON_OC' && input('noOrdenCompra', 'Número de orden de compra', { required: true, maxLength: 20 })}
             </div>
+            {(identity.loading || identity.error || identity.message) && <p role={identity.error?'alert':'status'} className="text-sm text-slate-600">{identity.loading?'Consultando proveedor…':identity.error||identity.message}{identity.error&&<button type="button" className="ml-2 underline" onClick={identity.retry}>Reintentar</button>}</p>}
+            <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={independentIssuer} onChange={event=>{setIndependentIssuer(event.target.checked);if(!event.target.checked&&identity.profile?.nit&&values.nitEmisor.trim().toUpperCase()!==identity.profile.nit.trim().toUpperCase())setValues(current=>({...current,idProveedor:''}));}} />Conservar un emisor del comprobante diferente del proveedor. El NIT identifica el DTE; no modifica el catálogo.</label>
             <div className="border-t border-slate-100 pt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {input('serie', 'Serie', { required: true, maxLength: 40 })}
               {input('numeroDocumento', 'Número de documento', { required: true, maxLength: 80 })}
               {input('uuidFiscal', 'UUID fiscal', { required: values.origenIngreso === 'FACTURACION_ELECTRONICA', maxLength: 100 })}
-              {input('nitEmisor', 'NIT emisor', { maxLength: 20 })}
+              <CxpNitInput id="registro-nitEmisor" label="NIT emisor" value={values.nitEmisor} error={errors.nitEmisor} disabled={saving}
+                onChange={identity.editNit} onPick={supplier=>void identity.pick(supplier,true)} autoResolve={!independentIssuer} />
               {input('hashOrigen', 'Hash de origen', { maxLength: 128, className: 'sm:col-span-2' })}
             </div>
             <div className="border-t border-slate-100 pt-5"><CxpActorReadOnly id="registro-creadoPor" label="Registrado por" actorId={session?.actor?.id} /></div>
@@ -325,7 +336,7 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
                 }} />)}
             </div>
             <div className="border-t border-slate-100 pt-5">
-              <h3 className="text-sm font-bold text-slate-900 mb-3">Importes del comprobante</h3>
+              <CxpCaptureSectionHeading>Importes del comprobante</CxpCaptureSectionHeading>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {input('subtotal', 'Subtotal', { inputMode: 'decimal', required: true })}
                 {input('descuentoTotal', 'Descuentos', { inputMode: 'decimal' })}
@@ -362,7 +373,7 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
             <p className="text-sm text-slate-600">Después del registro adjunta el DTE y añade las líneas y los tributos desde el expediente. RF04 exigirá el adjunto antes de enviarlo a aprobación.</p>
           </div>}
 
-          <div className="cxp-dialog-footer flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 mt-6 pt-4">
+          <div className={captureFooterClass}>
             <span className="text-xs text-slate-500">Paso {step + 1} de 3</span>
             <div className="flex gap-2">
               {step > 0 && <Button variant="secondary" disabled={saving} onClick={() => { setStep(current => current - 1); setFormError(null); }}>Anterior</Button>}
@@ -371,15 +382,10 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
             </div>
           </div>
         </section>
-        <aside className="bg-white border border-slate-200 rounded-xl shadow-sm p-4" aria-label="Después del registro">
-          <h2 className="text-sm font-bold text-slate-900">Así continúa el trámite</h2>
-          <ol className="mt-4 space-y-4 text-sm text-slate-600">
-            <li><strong className="text-blue-700">1. Recibido</strong><p>Registra la cabecera del DTE.</p></li>
-            <li><strong className="text-slate-800">2. Completar expediente</strong><p>Adjunta el DTE y agrega líneas y tributos según el comprobante.</p></li>
-            <li><strong className="text-slate-800">3. Validar</strong><p>Comprueba datos e importes antes de enviarlo a aprobación.</p></li>
-          </ol>
-        </aside>
-      </div>
+        <details className="cxp-disclosure text-sm text-slate-600" aria-label="Después del registro">
+          <summary>¿Qué ocurre después de registrar?</summary>
+          <p>El documento queda RECIBIDO. Desde su expediente adjunta el DTE, captura líneas y tributos y valida los datos e importes (RF04) antes de enviarlo a aprobación.</p>
+        </details>
       </form>
     </section>
   </div>, document.body);

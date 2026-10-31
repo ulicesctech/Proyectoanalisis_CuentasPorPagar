@@ -1,13 +1,15 @@
 import type {
-  CxpCalculoFacturaEspecial, CxpFacturaEspecialDetalle, CxpFacturaEspecialResumen, CxpReglaTributaria, PaginatedResponse,
+  CxpCalculoFacturaEspecial, CxpFacturaEspecialConfiguracion, CxpFacturaEspecialDetalle, CxpFacturaEspecialResumen, CxpReglaTributaria, PaginatedResponse,
 } from '@erp/contracts';
 import { API_BASE_URL, ApiError, apiClient, buildQueryString } from '../api';
+import { sessionEpoch } from '../auth/sessionScope';
 
 export type AccionFlujo = 'enviar-revision' | 'revisar' | 'devolver' | 'aprobar' | 'rechazar' | 'reabrir' | 'emitir' | 'anular';
 export interface ResultadoAccion { mensaje: string; factura: CxpFacturaEspecialDetalle }
 
 export const facturasEspecialesApi = {
-  list: (params: { page: number; search?: string; etapa?: string }) =>
+  configuracion: (fechaDocumento: string, moneda: string) => apiClient.get<CxpFacturaEspecialConfiguracion>(`/cxp/facturas-especiales/configuracion${buildQueryString({fechaDocumento,moneda})}`),
+  list: (params: { page: number; search?: string; etapa?: string; idProveedor?: string }) =>
     apiClient.get<PaginatedResponse<CxpFacturaEspecialResumen>>(`/cxp/facturas-especiales${buildQueryString({ ...params, limit: 10 })}`),
   get: (id: number) => apiClient.get<CxpFacturaEspecialDetalle>(`/cxp/facturas-especiales/${id}`),
   calcular: (data: unknown) => apiClient.post<CxpCalculoFacturaEspecial>('/cxp/facturas-especiales/calcular', data),
@@ -17,14 +19,18 @@ export const facturasEspecialesApi = {
 
   /** Descarga la constancia PDF desde el servidor (respuesta binaria, no JSON). */
   async descargarConstancia(id: number): Promise<void> {
+    const epoch = sessionEpoch();
     const response = await fetch(`${API_BASE_URL}/cxp/facturas-especiales/${id}/constancia`, { credentials: 'include' });
+    if (epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó la descarga de la cuenta anterior.', 409);
     if (response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new ApiError(body?.error ?? `Error ${response.status}`, response.status);
     }
     const nombre = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? `constancia-${id}.pdf`;
-    const url = URL.createObjectURL(await response.blob());
+    const blob = await response.blob();
+    if (epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó la descarga de la cuenta anterior.', 409);
+    const url = URL.createObjectURL(blob);
     const link = Object.assign(document.createElement('a'), { href: url, download: nombre });
     document.body.appendChild(link);
     link.click();

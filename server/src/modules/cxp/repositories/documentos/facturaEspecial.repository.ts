@@ -139,8 +139,10 @@ export function facturaEspecialTx(connection: Connection) {
      */
     async siguienteCorrelativo(codigo: 'CORRELATIVO_FACTURA' | 'CORRELATIVO_CONSTANCIA'): Promise<number> {
       const actual = await this.parametro('CXP_FACTURA_ESPECIAL', codigo, true);
-      if (!actual || actual.activo !== 'S') throw new Error(`Falta el parámetro activo CXP_FACTURA_ESPECIAL/${codigo}. Aplica la migración 001.`);
-      const siguiente = Number(actual.numero ?? 0) + 1;
+      if (!actual || actual.activo !== 'S' || actual.numero == null || !Number.isSafeInteger(actual.numero) || actual.numero < 0 || actual.numero >= Number.MAX_SAFE_INTEGER) {
+        throw new CxpError(`Configura el parámetro activo CXP_FACTURA_ESPECIAL/${codigo} con el último número utilizado, entero no negativo. No reinicies correlativos.`,409);
+      }
+      const siguiente = actual.numero + 1;
       await connection.execute(
         `UPDATE CXP_PARAMETRO SET VALOR_NUMERO = :siguiente, FECHA_MODIFICACION = SYSTIMESTAMP WHERE ID_PARAMETRO = :id`,
         { siguiente, id: actual.id });

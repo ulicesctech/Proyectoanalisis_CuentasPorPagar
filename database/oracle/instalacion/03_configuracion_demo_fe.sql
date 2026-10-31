@@ -1,0 +1,65 @@
+-- SOLO ORACLE LOCAL DE DEMOSTRACION. DML idempotente: no modifica estructura.
+-- Conserva parametros validos y numeros usados. No crea documentos, pagos ni sesiones.
+-- Tasas ficticias del 10% y 2%: SIMULACION LOCAL, SIN VALIDEZ FISCAL.
+SET DEFINE OFF
+SET SERVEROUTPUT ON
+WHENEVER SQLERROR EXIT FAILURE ROLLBACK
+DECLARE
+  v_count NUMBER;
+  v_role NUMBER;
+  v_actor NUMBER;
+  v_serie VARCHAR2(500);
+  v_max_factura NUMBER;
+  v_max_constancia NUMBER;
+  PROCEDURE parametro(p_grupo VARCHAR2,p_codigo VARCHAR2,p_nombre VARCHAR2,p_texto VARCHAR2,p_numero NUMBER) IS
+    v_activo CHAR(1);
+    v_texto VARCHAR2(500);
+    v_numero NUMBER;
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM CXP_PARAMETRO WHERE GRUPO_PARAMETRO=p_grupo AND CODIGO=p_codigo;
+    IF v_count=0 THEN
+      INSERT INTO CXP_PARAMETRO (GRUPO_PARAMETRO,CODIGO,NOMBRE,VALOR_TEXTO,VALOR_NUMERO,ACTIVO)
+        VALUES (p_grupo,p_codigo,p_nombre,p_texto,p_numero,'S');
+    ELSIF v_count=1 THEN
+      SELECT ACTIVO,VALOR_TEXTO,VALOR_NUMERO INTO v_activo,v_texto,v_numero FROM CXP_PARAMETRO WHERE GRUPO_PARAMETRO=p_grupo AND CODIGO=p_codigo;
+      IF v_activo<>'S' OR (p_texto IS NOT NULL AND (TRIM(v_texto) IS NULL OR LENGTH(TRIM(v_texto))>40))
+        OR (p_texto IS NULL AND (v_numero IS NULL OR v_numero<0 OR v_numero<>TRUNC(v_numero))) THEN
+        RAISE_APPLICATION_ERROR(-20041,'Revisa parametro existente '||p_grupo||'/'||p_codigo||'; no se sobrescribe.');
+      END IF;
+      IF p_codigo LIKE 'CORRELATIVO_%' AND v_numero<p_numero THEN
+        RAISE_APPLICATION_ERROR(-20042,'Correlativo por debajo de numeros usados: '||p_codigo||'. No reiniciarlo.');
+      END IF;
+    ELSE
+      RAISE_APPLICATION_ERROR(-20043,'Parametro duplicado: '||p_grupo||'/'||p_codigo);
+    END IF;
+  END;
+BEGIN
+  IF NVL(SYS_CONTEXT('USERENV','IP_ADDRESS'),'127.0.0.1') NOT IN ('127.0.0.1','::1','::ffff:127.0.0.1') THEN
+    RAISE_APPLICATION_ERROR(-20040,'Este complemento solo se autoriza para una conexion Oracle local de demostracion.');
+  END IF;
+  LOCK TABLE CXP_PARAMETRO IN EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE CXP_REGLA_TRIBUTARIA IN EXCLUSIVE MODE NOWAIT;
+  SELECT COUNT(*),MIN(ROL_ID_ROL) INTO v_count,v_role FROM ROL WHERE UPPER(TRIM(ROL_NOMBRE_ROL))='APROBADOR_CXP' AND ROL_ACTIVO=1;
+  IF v_count<>1 THEN RAISE_APPLICATION_ERROR(-20044,'Debe existir un unico rol activo APROBADOR_CXP.'); END IF;
+  SELECT MIN(U.USU_ID_USUARIO) INTO v_actor FROM USUARIO U JOIN ROL R ON R.ROL_ID_ROL=U.USU_ID_ROL
+    WHERE U.USU_ACTIVO=1 AND R.ROL_ACTIVO=1 AND UPPER(TRIM(R.ROL_NOMBRE_ROL))='OPERADOR_CXP';
+  IF v_actor IS NULL THEN RAISE_APPLICATION_ERROR(-20045,'Falta un usuario operativo activo OPERADOR_CXP para la configuracion demo.'); END IF;
+  parametro('CXP_FACTURA_ESPECIAL','SERIE','Serie de factura especial - demo','FESP',NULL);
+  SELECT TRIM(VALOR_TEXTO) INTO v_serie FROM CXP_PARAMETRO WHERE GRUPO_PARAMETRO='CXP_FACTURA_ESPECIAL' AND CODIGO='SERIE';
+  SELECT NVL(MAX(CASE WHEN REGEXP_LIKE(NUMERO_DOCUMENTO,'^[0-9]+$') THEN TO_NUMBER(NUMERO_DOCUMENTO) END),0)
+    INTO v_max_factura FROM CXP_DOCUMENTO WHERE TIPO_DOCUMENTO='FACTURA_ESPECIAL' AND SERIE=v_serie;
+  SELECT NVL(MAX(TO_NUMBER(REGEXP_SUBSTR(NUMERO_CONSTANCIA,'[0-9]+$'))),0) INTO v_max_constancia FROM CXP_FACTURA_ESPECIAL;
+  parametro('CXP_FACTURA_ESPECIAL','CORRELATIVO_FACTURA','Ultimo numero utilizado - no reiniciar',NULL,v_max_factura);
+  parametro('CXP_FACTURA_ESPECIAL','CORRELATIVO_CONSTANCIA','Ultima constancia utilizada - no reiniciar',NULL,v_max_constancia);
+  parametro('CXP_FE_APROBADOR_ROL','ROL_APROBADOR','Rol aprobador de facturas especiales',NULL,v_role);
+  SELECT COUNT(*) INTO v_count FROM CXP_REGLA_TRIBUTARIA WHERE TIPO_DOCUMENTO='FACTURA_ESPECIAL';
+  IF v_count=0 THEN
+    INSERT INTO CXP_REGLA_TRIBUTARIA (CODIGO_REGLA,VERSION_REGLA,TIPO_DOCUMENTO,TIPO_TRIBUTO,CODIGO_TRIBUTO,NOMBRE_TRIBUTO,PORCENTAJE,MONTO_FIJO,BASE_DESDE,SOBRE_EXCEDENTE,MONEDA,VIGENTE_DESDE,VIGENTE_HASTA,ESTADO,MOTIVO_CAMBIO,CREADA_POR)
+      VALUES ('CXP_DEMO_FE_IMP',1,'FACTURA_ESPECIAL','IMPUESTO','IVA_DEMO','SIMULACION LOCAL - impuesto ficticio SIN VALIDEZ FISCAL',10,0,0,'N','GTQ',DATE '2026-10-01',DATE '2027-12-31','VIGENTE','DEMO FICTICIA: no representa legislacion ni tasas vigentes.',v_actor);
+    INSERT INTO CXP_REGLA_TRIBUTARIA (CODIGO_REGLA,VERSION_REGLA,TIPO_DOCUMENTO,TIPO_TRIBUTO,CODIGO_TRIBUTO,NOMBRE_TRIBUTO,PORCENTAJE,MONTO_FIJO,BASE_DESDE,SOBRE_EXCEDENTE,MONEDA,VIGENTE_DESDE,VIGENTE_HASTA,ESTADO,MOTIVO_CAMBIO,CREADA_POR)
+      VALUES ('CXP_DEMO_FE_RET',1,'FACTURA_ESPECIAL','RETENCION','ISR_DEMO','SIMULACION LOCAL - retencion ficticia SIN VALIDEZ FISCAL',2,0,0,'N','GTQ',DATE '2026-10-01',DATE '2027-12-31','VIGENTE','DEMO FICTICIA: no representa legislacion ni tasas vigentes.',v_actor);
+  END IF;
+  DBMS_OUTPUT.PUT_LINE('Configuracion FE completada. Configuraciones existentes conservadas; sin reiniciar correlativos.');
+END;
+/
+COMMIT;

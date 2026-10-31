@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Download, FileWarning, Pencil } from 'lucide-react';
 import type { CxpFacturaEspecialDetalle } from '@erp/contracts';
-import { Modal } from '../../../shared/components';
+import { CxpCaptureDialog } from '../components/CxpCaptureDialog';
 import { Button, DataTable } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { errorDe, facturasEspecialesApi, formatoFecha, formatoMonto, type AccionFlujo } from './api';
@@ -11,6 +11,7 @@ import { ACCIONES, ORDEN_ACCIONES } from './components/acciones';
 import { EtapaBadge, FlujoFactura } from './components/Etapa';
 import { FacturaEspecialForm } from './components/FacturaEspecialForm';
 import { UsuarioOperacion } from './components/UsuarioOperacion';
+import { useCxpFormGuard } from '../components/CxpFormGuard';
 
 const TABS = ['Resumen', 'Tributos', 'Aprobaciones', 'Historial'] as const;
 
@@ -33,6 +34,9 @@ export function CxpFacturaEspecialDetallePage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Resumen');
   const [accion, setAccion] = useState<AccionFlujo | null>(null);
   const [editando, setEditando] = useState(false);
+  const [formStatus, setFormStatus] = useState({dirty:false,busy:false});
+  const { discard } = useCxpFormGuard();
+  const closeEdit = () => { if (!formStatus.busy) void discard(() => setEditando(false), formStatus.dirty); };
   const [descargando, setDescargando] = useState(false);
 
   const cargar = useCallback(() => {
@@ -164,11 +168,11 @@ export function CxpFacturaEspecialDetallePage() {
           {!factura.historial.length && <li className="p-6 text-sm text-slate-500 text-center">Sin movimientos registrados.</li>}
         </ol>}
 
-        <Modal isOpen={editando} onClose={() => setEditando(false)} size="lg" title={`Editar · ${factura.serie}-${factura.numeroDocumento}`}
+        {editando && <CxpCaptureDialog onClose={closeEdit} busy={formStatus.busy} title={`Editar · ${factura.serie}-${factura.numeroDocumento}`}
           description="Los tributos se recalculan con las reglas vigentes en la fecha de la operación.">
-          {editando && <FacturaEspecialForm factura={factura} onCancel={() => setEditando(false)}
-            onSuccess={resultado => { setEditando(false); setFactura(resultado.factura); setAviso(resultado.mensaje); }} />}
-        </Modal>
+          <FacturaEspecialForm factura={factura} onCancel={closeEdit} onStatusChange={setFormStatus}
+            onSuccess={resultado => { setEditando(false); setFactura(resultado.factura); setAviso(resultado.mensaje); }} />
+        </CxpCaptureDialog>}
         <AccionDialog idDocumento={factura.idDocumento} accion={accion} onClose={() => setAccion(null)}
           onDone={resultado => { setAccion(null); setFactura(resultado.factura); setAviso(resultado.mensaje); }} />
       </>}

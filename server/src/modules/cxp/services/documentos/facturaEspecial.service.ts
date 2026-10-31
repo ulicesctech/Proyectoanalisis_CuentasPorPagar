@@ -15,6 +15,7 @@ import { reglaTributariaTx } from '../../repositories/documentos/reglaTributaria
 import { CxpError } from '../errors';
 import { checkApprovals, checkStateChange, resetApprovals } from '../workflow.service';
 import { buildConstanciaPdf, type ConstanciaData } from './constanciaPdf';
+import { facturaEspecialConfiguracionWithConnection } from './facturaEspecial.configuracion';
 
 const TIPO = 'FACTURA_ESPECIAL';
 const documentos = createCxpRepository('documentos');
@@ -124,9 +125,18 @@ function datosDocumento(input: CreateCxpFacturaEspecialInput, calculo: CxpCalcul
   };
 }
 
-async function datosProveedor(connection: Connection, input: CreateCxpFacturaEspecialInput) {
+export function validarNitProveedorFacturaEspecial(nitMaestro:string|null, input: Pick<CreateCxpFacturaEspecialInput,'idProveedor'|'proveedorNit'>, anterior?: Pick<CxpFacturaEspecialDetalle,'idProveedor'|'proveedorNit'>) {
+  const esperado=nitMaestro?.trim().toUpperCase();
+  const nit = input.proveedorNit?.trim().toUpperCase();
+  const historicoSinCambios = anterior?.idProveedor === input.idProveedor && (anterior.proveedorNit ?? '').trim().toUpperCase() === (nit ?? '');
+  if (esperado && nit && esperado !== nit && !historicoSinCambios) {
+    throw new CxpError('Revisa la identificación del proveedor',400,[{campo:'proveedorNit',mensaje:'El NIT no coincide con el proveedor seleccionado. Selecciona el proveedor correspondiente o usa su NIT registrado.'}]);
+  }
+}
+async function datosProveedor(connection: Connection, input: CreateCxpFacturaEspecialInput, anterior?: Pick<CxpFacturaEspecialDetalle,'idProveedor'|'proveedorNit'>) {
   const proveedor = await facturaEspecialTx(connection).proveedor(input.idProveedor);
   if (!proveedor) throw new CxpError('El proveedor seleccionado no existe', 400);
+  validarNitProveedorFacturaEspecial(proveedor.nit,input,anterior);
   const datos = {
     proveedorNombre: input.proveedorNombre?.trim() || proveedor.nombre,
     proveedorNit: input.proveedorNit || proveedor.nit || null,
@@ -237,6 +247,8 @@ export const cxpFacturaEspecialService = {
   async create(raw: unknown) {
     const input = createCxpFacturaEspecialSchema.parse(raw);
     return withCxpTransaction(async connection => {
+      const configuracion=await facturaEspecialConfiguracionWithConnection(connection,input.fechaDocumento,input.moneda);
+      if (!configuracion.puedeRegistrar) throw new CxpError(configuracion.impedimentos.join(' '),409);
       const tx = facturaEspecialTx(connection);
       const proveedor = await datosProveedor(connection, input);
       await sinDuplicado(connection, input);
@@ -271,7 +283,7 @@ export const cxpFacturaEspecialService = {
       if (fe.estado !== 'BORRADOR' || fe.estadoEmision !== 'PENDIENTE') {
         throw new CxpError(`La factura está en ${label(fe.etapa)} y no puede modificarse. Solo se editan facturas en preparación (borrador).`, 409);
       }
-      const proveedor = await datosProveedor(connection, input);
+      const proveedor = await datosProveedor(connection, input, fe);
       await sinDuplicado(connection, input, fe.idDocumento);
       const calculo = await calcular(connection, input);
       const actual = await documentoActual(connection, fe.idDocumento);

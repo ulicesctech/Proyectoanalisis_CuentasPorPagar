@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Plus, RefreshCw, Search } from 'lucide-react';
 import { getCxpEntity, type CxpDocumento, type PaginatedResponse, type PaginationMeta } from '@erp/contracts';
 import { apiClient, ApiError, buildQueryString } from '../api';
-import { Button, DataTable, Select, TextInput } from '../../../shared/ui-kit';
+import { DataTable, Select, TextInput } from '../../../shared/ui-kit';
+import { CxpButton as Button } from '../components/CxpButton';
+import { CxpPageHeader } from '../components/CxpPageHeader';
 import { CxpLayout } from '../CxpLayout';
-import { CxpBreadcrumb } from '../components/CxpBreadcrumb';
 import { DocumentoCatalogPicker } from './components/DocumentoCatalogPicker';
 import { CxpDocumentoRegistroDialog } from './DocumentoRegistroPage';
 import { DocumentoStatus, formatDocumentoDate, formatDocumentoMoney, readableState } from './documentoView';
+import '../procesos/procesos.css';
+import './documentos.css';
 
 type DocumentoListRow = CxpDocumento & { proveedorNombre?: string | null };
 
@@ -69,21 +72,25 @@ export function CxpDocumentoPage() {
   };
 
   return <CxpLayout resource="documentos">
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <CxpBreadcrumb group="Documentos" />
-          <h1 className="text-2xl font-bold text-slate-900">Documentos y saldos</h1>
-          <p className="text-sm text-slate-500 mt-1">Consulta vencimientos y saldos, y continúa el trámite de cada documento.</p>
-        </div>
-        <Button icon={Plus} onClick={() => { setCreatedDocument(null); setRegisterOpen(true); }}>Nuevo documento</Button>
-      </div>
+    <div className="cxp-workspace space-y-5">
+      <CxpPageHeader title="Documentos y saldos" group="Documentos"
+        description="Consulta vencimientos y saldos, y continúa el trámite de cada documento."
+        actions={<Button icon={Plus} onClick={() => { setCreatedDocument(null); setRegisterOpen(true); }}>Nuevo documento</Button>} />
 
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-4" aria-label="Filtros de documentos">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+      <section className="cxp-workspace-card" aria-label="Filtros de documentos">
+        <div className="cxp-workspace-card-heading">
+          <div><h2>Documentos registrados</h2><p role="status">{loading ? 'Actualizando documentos…' : `${meta.total} documentos encontrados`}</p></div>
+          <div className="cxp-workspace-filter-actions">
+            <Button variant="secondary" icon={RefreshCw} disabled={loading} onClick={() => setRefresh(value => value + 1)}>Actualizar</Button>
+            <Button variant="ghost" onClick={resetFilters} disabled={!searchInput && !estado && !idProveedor && !venceHasta}>Limpiar filtros</Button>
+          </div>
+        </div>
+        <div className="cxp-documento-filters">
+          <div className="cxp-documento-search">
           <TextInput id="documento-search" icon={Search} label="Buscar documento" value={searchInput}
             placeholder="ID, serie, número o UUID"
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInput(event.target.value)} />
+          </div>
           <DocumentoCatalogPicker id="documento-proveedor" label="Proveedor" catalog="proveedores" value={idProveedor}
             placeholder="Todos los proveedores" onChange={value => { setIdProveedor(value); setPage(1); }} />
           <Select id="documento-estado" label="Estado" value={estado} placeholder="" options={[
@@ -92,13 +99,6 @@ export function CxpDocumentoPage() {
           ]} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => { setEstado(event.target.value); setPage(1); }} />
           <TextInput id="documento-vence-hasta" label="Vence hasta" type="date" value={venceHasta}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setVenceHasta(event.target.value); setPage(1); }} />
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <p className="text-xs text-slate-500">{meta.total} documentos encontrados</p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={resetFilters}>Limpiar filtros</Button>
-            <Button variant="secondary" icon={RefreshCw} disabled={loading} onClick={() => setRefresh(value => value + 1)}>Actualizar</Button>
-          </div>
         </div>
       </section>
 
@@ -111,7 +111,8 @@ export function CxpDocumentoPage() {
         <Link className="font-semibold underline" to={`/cxp/documentos/${createdDocument.idDocumento}`}>Abrir expediente</Link>
       </div>}
 
-      <DataTable className="cxp-documentos-table" data={rows} isLoading={loading} emptyText={error ? 'La lista no está disponible.' : 'No hay documentos para estos filtros.'}
+      <section className="cxp-workspace-card" aria-label="Resultados de documentos">
+      <DataTable className="cxp-documentos-table" data={rows} isLoading={loading} emptyText={error ? 'La lista no está disponible.' : 'No hay documentos para estos filtros. Ajusta la búsqueda o registra un documento.'}
         columns={[
           { header: 'Documento', cell: ({ row }: { row: DocumentoListRow }) => <div className="min-w-36">
             <p className="font-semibold text-slate-900">{[row.serie, row.numeroDocumento].filter(Boolean).join(' · ') || `Documento #${row.idDocumento}`}</p>
@@ -127,16 +128,18 @@ export function CxpDocumentoPage() {
             <Link to={row.tipoDocumento === 'FACTURA_ESPECIAL'
               ? `/cxp/facturas-especiales/${row.idDocumento}` : `/cxp/documentos/${row.idDocumento}`}
               className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 whitespace-nowrap">
+              <Eye size={14} className="mr-2" aria-hidden="true" />
               {row.tipoDocumento === 'FACTURA_ESPECIAL' ? 'Ver factura especial' : 'Ver expediente'}
             </Link> },
         ]} />
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-slate-100 text-sm text-slate-600">
         <span>{meta.total} documentos · Página {page} de {meta.totalPages}</span>
         <div className="flex gap-2">
           <Button variant="secondary" icon={ChevronLeft} disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Anterior</Button>
           <Button variant="secondary" icon={ChevronRight} disabled={page >= meta.totalPages || loading} onClick={() => setPage(current => current + 1)}>Siguiente</Button>
         </div>
       </div>
+      </section>
 
       {registerOpen && <CxpDocumentoRegistroDialog onClose={() => setRegisterOpen(false)} onSuccess={created => {
         setRegisterOpen(false);

@@ -14,8 +14,16 @@ import { CxpActorReadOnly } from './CxpActorReadOnly';
 import { DocumentoMonedaControl, useDocumentoMonedas } from '../documentos/components/DocumentoMonedaControl';
 import { cambioDocumento, documentoAmountHelp, documentoClearlyInvalid, documentoFormErrors, documentoPreview } from '../documentos/documentoCaptura';
 import { initialCxpFormValues, cxpFormRecord } from './cxpFormValues';
+import { useCxpFormGuard, useCxpPendingChanges } from './CxpFormGuard';
+import { CxpNitInput, useCxpProveedorIdentity } from './CxpProveedorIdentity';
+import {CxpCaptureSectionHeading} from './CxpCaptureSection';
 
 export interface CxpFormProps {
+  /** Composición administrativa: captura solo los datos de la tarea y guarda con su operación controlada. */
+  fieldNames?: readonly string[];
+  operation?: (input: CxpRecord) => Promise<unknown>;
+  compact?: boolean;
+  submitLabel?: string;
   record?: CxpRecord | null;
   initialValues?: CxpRecord;
   readOnly?: boolean;
@@ -64,16 +72,17 @@ function placeholderFor(field: CxpFieldDefinition): string | undefined {
   return undefined;
 }
 
-export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel, onBusyChange }: CxpFormProps & { resource: CxpResource }) {
+export function CxpEntityForm({ resource, record, initialValues = {}, readOnly = false, onSuccess, onCancel: cancel, onBusyChange,fieldNames,operation,compact=false,submitLabel }: CxpFormProps & { resource: CxpResource }) {
   const entity = getCxpEntity(resource)!;
-  const management = isCxpManagementResource(resource);
-  const FormButton = management ? CxpButton : Button;
+  const management = isCxpManagementResource(resource)&&!compact;
+  const FormButton = management||operation ? CxpButton : Button;
   const sectionHeading = useRef<HTMLHeadingElement>(null);
   const editing = !!record;
   const { config: documentCurrencies, error: documentCurrencyError } = useDocumentoMonedas(resource === 'documentos');
   const paymentForm = ['pagos', 'lotes-pago', 'aplicaciones'].includes(resource);
   const initial = useMemo(() => initialCxpFormValues(resource, record, initialValues), []);
   const [values, setValues] = useState<Record<string, string>>(initial);
+  const [independentIssuer,setIndependentIssuer] = useState(!!record?.nitEmisor);
   const [association, setAssociation] = useState(entity.associationFields?.find(field => values[field]) ?? entity.associationFields?.[0] ?? '');
   const [section, setSection] = useState(sectionsOrder.find(name => entity.fields.some(field => field.section === name && !field.identity)) ?? sectionsOrder[0]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -87,6 +96,11 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     ? { ...Object.fromEntries(Object.entries(documentValidation).filter(([name]) => documentTouched[name])), ...errors } : errors;
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const baseline = useRef(JSON.stringify(values));
+  const clearPending = useCxpPendingChanges(!readOnly && JSON.stringify(values) !== baseline.current, busy);
+  const { discard } = useCxpFormGuard();
+  const onCancel = () => { if (!busy) void discard(() => { clearPending(); cancel(); }, !readOnly && JSON.stringify(values) !== baseline.current); };
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   const asRecord = (source: Record<string, string>): CxpRecord => cxpFormRecord(resource, source);
@@ -96,7 +110,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
   try { preview = prepareCxpRecord(resource, { ...raw, montoAplicado: record?.montoAplicado ?? 0 }); } catch { /* La validación indica el campo inválido al guardar. */ }
   if (resource === 'documentos') preview = { ...raw, totalBruto: undefined, totalNeto: undefined,
     totalLocal: undefined, saldoPendiente: undefined, ...documentoPreview(values, Number(getOperadorId())) };
-  const visible = entity.fields.filter(field => isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association) && !(feRoleParameter && field.name === 'valorTexto'));
+  const visible = entity.fields.filter(field => (!fieldNames||fieldNames.includes(field.name))&&isCxpFieldVisible(resource, field.name, raw) && (!entity.associationFields?.includes(field.name) || field.name === association) && !(feRoleParameter && field.name === 'valorTexto'));
   const sections = sectionsOrder.filter(name => visible.some(field => field.section === name));
   const sectionIndex = sections.indexOf(section);
   const lastSection = sectionIndex === sections.length - 1;
@@ -122,6 +136,10 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       setErrors({});
     } else setErrors(current => ({ ...current, [name]: '' }));
   };
+  const identity = useCxpProveedorIdentity({idProveedor:resource==='documentos'?values.idProveedor:'',nit:values.nitEmisor??'',independent:independentIssuer,
+    onNit:value=>change('nitEmisor',value),onSelect:(supplier,replaceNit)=>{
+      setValues(current=>({...current,idProveedor:supplier?String(supplier.idProveedor):'',...(supplier&&replaceNit?{nitEmisor:supplier.nit??''}:{})}));setErrors({});
+    }});
   const showErrors = (fieldErrors: Record<string, string>) => {
     setErrors(fieldErrors);
     if (resource === 'documentos') setDocumentTouched(current => ({ ...current, ...Object.fromEntries(Object.keys(fieldErrors).map(name => [name, true])) }));
@@ -136,7 +154,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || readOnly) return;
+    if (busyRef.current || readOnly) return;
     // Enter avanza de sección; la creación o edición solo se confirma al final.
     if (management && !lastSection) { goToSection(sections[sectionIndex + 1]); return; }
     setErrors({});
@@ -152,6 +170,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
     }
     const payload: CxpRecord = {};
     for (const field of entity.fields) {
+      if(fieldNames&&!fieldNames.includes(field.name))continue;
       if (field.readOnly) continue;
       if (feRoleParameter && field.name === 'valorTexto' && !editing) continue;
       const text = values[field.name] ?? '';
@@ -176,30 +195,32 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       setFormError('La sesión no tiene un usuario CXP activo. Vuelve a iniciar sesión.');
       return;
     }
-    const authored = applyCxpActorFields(resource, operador, payload, editing ? record : null);
+    const authored = operation?{record:payload,issues:[]}:applyCxpActorFields(resource, operador, payload, editing ? record : null);
     if (authored.issues.length) { showErrors(Object.fromEntries(authored.issues.map(issue => [issue.campo, issue.mensaje]))); return; }
     const schema = editing ? CXP_SCHEMAS[resource].update : CXP_SCHEMAS[resource].create;
-    const parsed = schema.safeParse(authored.record);
-    if (!parsed.success) {
+    const parsed = operation?{success:true as const,data:authored.record}:schema.safeParse(authored.record);
+    if (!parsed.success && 'error' in parsed) {
       showErrors(Object.fromEntries(parsed.error.issues.map(issue => [String(issue.path[0] ?? ''), issue.message])));
       return;
     }
     let calculated: CxpRecord;
     try { calculated = prepareCxpRecord(resource, { ...(record ?? {}), ...parsed.data } as CxpRecord); }
     catch (error) { setFormError(error instanceof Error ? error.message : 'Revisa los importes'); return; }
-    const issues = validateCxpRecord(resource, calculated);
+    const issues = operation?[]:validateCxpRecord(resource, calculated);
     if (issues.length) { showErrors(Object.fromEntries(issues.map(issue => [issue.campo, issue.mensaje]))); return; }
-    setBusy(true);
+    busyRef.current=true;setBusy(true);
     try {
-      if (editing) await apiClient.patch(`/cxp/${resource}/${record![entity.idField]}`, parsed.data);
+      if(operation)await operation(parsed.data as CxpRecord);
+      else if (editing) await apiClient.patch(`/cxp/${resource}/${record![entity.idField]}`, parsed.data);
       else await apiClient.post(`/cxp/${resource}`, parsed.data);
       clearCxpCatalogCache();
+      baseline.current = JSON.stringify(values); clearPending();
       onSuccess();
     } catch (error) {
       if (error instanceof ApiError && Array.isArray(error.details) && error.details.length) {
         showErrors(Object.fromEntries(error.details.map((issue: { campo: string; mensaje: string }) => [issue.campo, issue.mensaje])));
       } else setFormError(error instanceof ApiError ? error.message : 'No se pudo guardar. Comprueba la conexión e inténtalo de nuevo.');
-    } finally { setBusy(false); }
+    } finally { busyRef.current=false;setBusy(false); }
   }
 
   const renderField = (field: CxpFieldDefinition) => {
@@ -245,8 +266,15 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
       if (field.name === 'idCuentaOrigen') { filterField = 'tipoTitular'; filterValue = 'EMPRESA'; }
       if (field.name === 'idCuentaDestino' && values.idProveedor) { filterField = 'idProveedor'; filterValue = values.idProveedor; }
       return <RelationSelect key={field.name} {...props} catalog={field.lookup} readOnly={locked} allowCreate={!management}
-        filterField={filterField} filterValue={filterValue} onChange={next => change(field.name, next)} />;
+        filterField={filterField} filterValue={filterValue} onChange={next => { if(resource==='documentos'&&field.name==='idProveedor')void identity.choose(next);else change(field.name,next); }} />;
     }
+    if(resource==='documentos'&&field.name==='nitEmisor')return <div key={field.name} className="space-y-2">
+      <CxpNitInput id="cxp-nitEmisor" label={field.label} value={values.nitEmisor??''} error={displayedErrors.nitEmisor} disabled={locked}
+        onChange={identity.editNit} onPick={supplier=>void identity.pick(supplier,true)} autoResolve={!independentIssuer}
+        helperText="Dato del comprobante. La información histórica no se sustituye al abrir la edición." />
+      {!readOnly&&<label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={independentIssuer} onChange={event=>{setIndependentIssuer(event.target.checked);if(!event.target.checked&&identity.profile?.nit&&(values.nitEmisor??'').trim().toUpperCase()!==identity.profile.nit.trim().toUpperCase())setValues(current=>({...current,idProveedor:''}));}} />Conservar el emisor del comprobante independiente del proveedor.</label>}
+      {(identity.message||identity.error||identity.loading)&&<p role={identity.error?'alert':'status'} className="text-xs text-slate-600">{identity.loading?'Consultando proveedor…':identity.error||identity.message}</p>}
+    </div>;
     // El estado solo ofrece los cambios que el flujo de trabajo permite desde el estado actual.
     const allowed = field.name === 'estado' ? cxpAllowedStates(resource, record?.estado as string | undefined) : null;
     const choices = field.options?.filter(option => (!allowed || allowed.includes(option))
@@ -292,14 +320,14 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
             onChange={(event: React.ChangeEvent<HTMLSelectElement>) => goToSection(event.target.value)} />
         </div>
         <progress value={sectionIndex + 1} max={sections.length} aria-label="Progreso del formulario" />
-      </div> : <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-4" aria-label="Secciones del formulario">
+      </div> : !compact&&<nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-4" aria-label="Secciones del formulario">
         {sections.map(name => <Button key={name} type="button" disabled={busy} onClick={() => setSection(name)}
           variant={section === name ? 'primary' : 'secondary'} aria-pressed={section === name}>
           {name}{entity.fields.some(field => field.section === name && errors[field.name]) && <span className="ml-1 text-red-500">●</span>}
         </Button>)}
       </nav>}
       {formError && <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{formError}</p>}
-      {entity.associationFields && section === 'Relaciones' && <Select id="cxp-associated-entity" label="Entidad relacionada" required isReadOnly={readOnly || busy}
+      {entity.associationFields && !operation && section === 'Relaciones' && <Select id="cxp-associated-entity" label="Entidad relacionada" required isReadOnly={readOnly || busy}
         value={association} options={entity.associationFields.map(name => ({ value: name, label: entity.fields.find(field => field.name === name)!.label }))}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
           const chosen = event.target.value;
@@ -308,11 +336,11 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
         }} />}
       {resource === 'aplicaciones' && section === 'Estado y control' && values.tipoAplicacion === 'COMPENSACION_CXC' &&
         <p className="text-sm text-slate-600">Confirma la compensación únicamente después de que Cuentas por Cobrar haya registrado su parte.</p>}
-      <div className={management ? 'cxp-management-fields' : 'grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4'}>
+      {compact?<div className="space-y-5">{sections.map(name=><section key={name} className="border-t border-slate-100 pt-4"><CxpCaptureSectionHeading>{name}</CxpCaptureSectionHeading><div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{visible.filter(field=>field.section===name).map(renderField)}</div></section>)}</div>:<div className={management ? 'cxp-management-fields' : 'grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4'}>
         {visible.filter(field => field.section === section).map(field => management
           ? <div key={field.name} className={`cxp-management-field cxp-management-field--${field.lookup || field.options ? 'lookup' : field.type}`}>{renderField(field)}</div>
           : renderField(field))}
-      </div>
+      </div>}
       <div className={management ? 'cxp-management-form-footer' : 'flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4'}>
         <span className="text-xs text-slate-500">{readOnly ? 'Consulta del registro' : '* Campos obligatorios'}</span>
         <div className={management ? 'cxp-management-form-actions' : 'flex flex-wrap gap-2'}>
@@ -321,7 +349,7 @@ export function CxpEntityForm({ resource, record, initialValues = {}, readOnly =
             onClick={() => goToSection(sections[sectionIndex - 1])}>Anterior</FormButton>}
           {management && !lastSection && <FormButton type="button" icon={ChevronRight} disabled={busy}
             onClick={() => goToSection(sections[sectionIndex + 1])}>Siguiente</FormButton>}
-          {!readOnly && (!management || lastSection) && <FormButton type="submit" icon={management ? Save : undefined} disabled={busy}>{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear registro'}</FormButton>}
+          {!readOnly && (!management || lastSection) && <FormButton type="submit" icon={management ? Save : undefined} disabled={busy}>{busy ? 'Guardando…' : submitLabel??(editing ? 'Guardar cambios' : 'Crear registro')}</FormButton>}
         </div>
       </div>
     </form>

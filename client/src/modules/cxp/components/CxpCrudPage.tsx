@@ -13,6 +13,7 @@ import { RelationSelect, clearCxpCatalogCache } from './RelationSelect';
 import type { CxpFormProps } from './CxpEntityForm';
 import { CxpButton, type CxpButtonProps } from './CxpButton';
 import { CXP_MANAGEMENT_VIEWS, CxpManagementDialog, isCxpManagementResource } from './CxpManagementUI';
+import { useCxpFormGuard } from './CxpFormGuard';
 
 const badges = (value: string) => ['ACTIVA', 'ACTIVO', 'S', 'APROBADA', 'APROBADO', 'PAGADA', 'APLICADA', 'CONFIRMADO', 'CONCILIADA'].includes(value)
   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -41,6 +42,7 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
   const RecordModal = management ? CxpManagementDialog : Modal;
   const [showViews, setShowViews] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
+  const { discard } = useCxpFormGuard();
   const [params, setParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
@@ -88,9 +90,11 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     finally { setLoadingRecord(false); }
   };
   const close = () => {
+    void discard(() => {
     setFormBusy(false);
     setModal(null);
     if (params.has('registro')) { const next = new URLSearchParams(params); next.delete('registro'); setParams(next, { replace: true }); }
+    });
   };
   const remove = async () => {
     if (!deleting) return;
@@ -121,7 +125,7 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
     return links;
   };
 
-  return <CxpLayout resource={resource} searchQuery={searchInput} onSearchChange={setSearchInput}>
+  return <CxpLayout resource={resource} searchQuery={searchInput} onSearchChange={setSearchInput} menuAccess={!management && !parentDocumento}>
     <div className={management ? 'cxp-management-page' : 'space-y-5'}>
       {parentDocumento && <Link to={`/cxp/documentos/${parentDocumento}`}
         className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-800">← Volver al expediente · Documento #{parentDocumento}</Link>}
@@ -134,7 +138,7 @@ export function CxpCrudPage({ resource, Form }: { resource: CxpResource; Form: C
           <h1>{entity.title}</h1><p className="cxp-management-description">{presentation?.description}</p>
         </div>
         <div className="cxp-management-header-actions">
-          <PageButton icon={ArrowLeft} variant="ghost" onClick={() => navigate('/cxp')}>Volver al inicio</PageButton>
+          <PageButton icon={ArrowLeft} variant="secondary" onClick={() => navigate('/cxp')}>Volver a Cuentas por pagar</PageButton>
           <PageButton icon={LayoutGrid} variant="secondary" onClick={() => setShowViews(true)}>Otras vistas</PageButton>
           <PageButton icon={Plus} onClick={() => { setActionError(null); setNotice(null); setModal({ mode: 'create' }); }}>Nuevo registro</PageButton>
         </div>

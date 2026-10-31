@@ -128,6 +128,16 @@ export interface CxpCalculoFacturaEspecial {
   totalNeto: number;
 }
 
+export interface CxpFacturaEspecialConfiguracion {
+  fechaDocumento: string;
+  moneda: string;
+  serie: string | null;
+  puedeRegistrar: boolean;
+  impedimentos: string[];
+  advertencias: string[];
+  reglasVigentes: number;
+}
+
 /** Indica si la regla cubre la base imponible (tramo BASE_DESDE..BASE_HASTA). */
 export function cxpReglaCubreBase(regla: Pick<CxpReglaCalculo, 'baseDesde' | 'baseHasta'>, base: number): boolean {
   return base >= Number(regla.baseDesde) && (regla.baseHasta == null || base <= Number(regla.baseHasta));

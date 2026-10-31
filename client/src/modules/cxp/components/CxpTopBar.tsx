@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import { CxpCommandPalette } from './CxpCommandPalette';
 import { CxpUserMenu } from './CxpUserMenu';
 
@@ -13,14 +13,16 @@ function escribiendo(destino: EventTarget | null): boolean {
  * Barra superior de CXP: buscador de pantallas (⌘K / Ctrl+K o "/") y menú de la cuenta.
  * En Procesos de pago también muestra la búsqueda de solicitudes de esa pantalla.
  */
-export function CxpTopBar({ searchQuery, onSearchChange }: {
+export function CxpTopBar({ searchQuery, onSearchChange, onOpenMenu }: {
   searchQuery?: string; onSearchChange?: (value: string) => void;
+  onOpenMenu: () => void;
 }) {
   const [buscadorAbierto, setBuscadorAbierto] = useState(false);
   const atajo = useMemo(() => (/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'), []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setBuscadorAbierto(true);
@@ -42,6 +44,7 @@ export function CxpTopBar({ searchQuery, onSearchChange }: {
   </button>;
 
   return <header className="cxp-topbar flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+    <button type="button" className="cxp-menu-toggle shrink-0 rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Abrir menú" aria-label="Abrir menú" onClick={onOpenMenu}><Menu size={20} /></button>
     {abrirBuscador}
     {onSearchChange && <div className="relative flex min-w-0 max-w-sm flex-1 items-center">
       <Search size={15} className="pointer-events-none absolute left-3 text-slate-400" aria-hidden="true" />
