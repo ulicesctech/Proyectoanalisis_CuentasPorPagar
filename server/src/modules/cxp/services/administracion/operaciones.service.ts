@@ -57,7 +57,18 @@ export async function adminCreateWithConnection(c:Connection,r:CxpAdminResource,
   }
   if(r==='compromisos'){
     await exigirAdmin(c,actor,'registrarCompromiso');
-    const input=CXP_SCHEMAS.compromisos.create.omit({creadoPor:true,modificadoPor:true,saldoCapital:true,estado:true}).parse(raw);
+    const payload = typeof raw === 'object' && raw ? { fechaInicio: cxpToday(), ...raw } : raw;
+    const input=CXP_SCHEMAS.compromisos.create.omit({creadoPor:true,modificadoPor:true,saldoCapital:true,estado:true}).parse(payload);
+    if (input.tipoCompromiso === 'FONDO_CAJA_CHICA' && input.numeroReferencia) {
+      const dup = await c.execute<{ TOTAL: number }>(
+        `SELECT COUNT(1) AS "TOTAL" FROM CXP_COMPROMISO WHERE TIPO_COMPROMISO = 'FONDO_CAJA_CHICA' AND UPPER(TRIM(NUMERO_REFERENCIA)) = UPPER(TRIM(:ref))`,
+        { ref: input.numeroReferencia },
+        obj
+      );
+      if ((dup.rows?.[0]?.TOTAL ?? 0) > 0) {
+        throw new CxpError(`La referencia "${input.numeroReferencia}" ya existe para otro fondo de caja chica. Use una referencia única.`, 409);
+      }
+    }
     const result=await service(c,r).create({...input,saldoCapital:input.tipoCompromiso==='FONDO_CAJA_CHICA'?input.montoTotal:0,estado:'ACTIVO'},actor.id);
     await adminAudit(c,actor,'ADMIN_COMPROMISO_REGISTRADO',result,r,'Compromiso registrado con el estado inicial activo del servicio existente');return result;
   }

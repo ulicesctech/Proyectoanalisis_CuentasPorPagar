@@ -1,4 +1,5 @@
 import { ProcesosPagoPage } from './procesos/ProcesosPagoPage';
+import { CajaChicaPage } from './caja-chica/CajaChicaPage';
 // client/src/modules/cxp/routes.tsx
 import { Navigate, type RouteObject } from 'react-router-dom';
 import MainLayout from '../../layouts/MainLayout';
@@ -50,6 +51,7 @@ import { CxpEstadisticaPage } from './reportes/EstadisticaPage';
 
 const cxpPages: RouteObject[] = [
   { path: '/cxp/procesos-pago', element: <Navigate to="/cxp/contrasenas" replace /> },
+  { path: '/cxp/caja-chica', element: <CajaChicaPage /> },
   { path: '/cxp/contrasenas', element: <ProcesosPagoPage key="contrasenas" bandeja="contrasenas" /> },
   { path: '/cxp/autorizaciones', element: <ProcesosPagoPage key="autorizaciones" bandeja="autorizaciones" /> },
   { path: '/cxp/cheques', element: <ProcesosPagoPage key="cheques" bandeja="cheques" /> },

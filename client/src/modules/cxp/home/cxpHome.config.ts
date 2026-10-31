@@ -3,7 +3,7 @@
 // Las rutas deben existir en routes.tsx; los títulos de pantalla viven en navegacion/pantallas.ts.
 import {
   BadgeCheck, CalendarClock, ChartColumnStacked, FileCheck2, FilePlus2, FileText, Gauge, Hourglass, ReceiptText, Scale,
-  Send, ShieldCheck, Ticket, Wallet, type LucideIcon,
+  Send, ShieldCheck, Ticket, Wallet, Coins, type LucideIcon,
 } from 'lucide-react';
 
 /**
@@ -54,6 +54,13 @@ export const CXP_AREAS: AreaConfig[] = [
       { label: 'Pagos', path: '/cxp/pagos' },
       { label: 'Ejecución de pago', path: '/cxp/cheques' },
       { label: 'Aplicaciones', path: '/cxp/aplicaciones' },
+    ] },
+  { id: 'caja-chica', title: 'Caja Chica', icon: Coins, color: 'emerald', path: '/cxp/caja-chica',
+    description: 'Apertura de fondos, registro de gastos clasificados y reposiciones de saldo.',
+    links: [
+      { label: 'Fondos', path: '/cxp/caja-chica?bandeja=fondos' },
+      { label: 'Gastos', path: '/cxp/caja-chica?bandeja=gastos' },
+      { label: 'Reposiciones', path: '/cxp/caja-chica?bandeja=reposiciones' },
     ] },
   { id: 'control', title: 'Control', icon: Gauge, color: 'amber', path: '/cxp/reglas-aprobacion',
     description: 'Reglas de aprobación, decisiones, seguimiento y evidencias.',

@@ -74,8 +74,9 @@ function actorBlocker(documento: CxpRecord, actor: ApprovalActor | null): string
   if (!actor) return 'El usuario indicado no existe.';
   if (!actor.usuarioActivo) return 'El usuario indicado está inactivo.';
   if (!actor.rolActivo) return 'El rol del usuario está inactivo.';
-  if (actor.idUsuario === Number(documento.creadoPor) ||
-      documento.solicitadoPor != null && actor.idUsuario === Number(documento.solicitadoPor)) {
+  // Las reposiciones internas de caja chica (REEMBOLSO) no bloquean al aprobador si este las registró en demo/operación.
+  if (documento.tipoDocumento !== 'REEMBOLSO' && (actor.idUsuario === Number(documento.creadoPor) ||
+      documento.solicitadoPor != null && actor.idUsuario === Number(documento.solicitadoPor))) {
     return 'Quien registró o solicitó el documento no puede aprobarlo.';
   }
   return null;
@@ -149,7 +150,7 @@ async function loadApprovalContext(connection: Connection, idDocumento: number, 
 }
 
 export async function applyCajaChicaFundOnApproval(connection: Connection, documento: CxpRecord): Promise<void> {
-  if (!documento.idCompromiso || documento.tipoDocumento !== 'GASTO_CAJA_CHICA') return;
+  if (!documento.idCompromiso || (documento.tipoDocumento !== 'GASTO_CAJA_CHICA' && documento.tipoDocumento !== 'REEMBOLSO')) return;
   const fundRepo = createCxpRepository('compromisos').bind(connection);
   const fund = await fundRepo.findById(Number(documento.idCompromiso), true);
   if (!fund || fund.tipoCompromiso !== 'FONDO_CAJA_CHICA' || fund.estado !== 'ACTIVO') {
@@ -158,9 +159,28 @@ export async function applyCajaChicaFundOnApproval(connection: Connection, docum
   if (fund.moneda !== documento.moneda) throw new CxpError('La moneda del gasto o reposición debe coincidir con el fondo', 409);
   const amount = Number(documento.totalNeto);
   if (!Number.isFinite(amount) || amount <= 0) throw new CxpError('El importe de caja chica debe ser positivo', 409);
-  const balance = cxpMoneySum(Number(fund.saldoCapital), -amount);
-  if (balance < 0) throw new CxpError('El gasto supera el saldo disponible del fondo', 409);
-  await fundRepo.update(Number(fund.idCompromiso), { saldoCapital: balance });
+
+  if (documento.tipoDocumento === 'GASTO_CAJA_CHICA') {
+    const balance = cxpMoneySum(Number(fund.saldoCapital), -amount);
+    if (balance < 0) throw new CxpError('El gasto supera el saldo disponible del fondo', 409);
+    await fundRepo.update(Number(fund.idCompromiso), { saldoCapital: balance });
+  } else if (documento.tipoDocumento === 'REEMBOLSO') {
+    const balance = cxpMoneySum(Number(fund.saldoCapital), amount);
+    if (balance > Number(fund.montoTotal)) throw new CxpError('La reposición excede el saldo autorizado del fondo', 409);
+    await fundRepo.update(Number(fund.idCompromiso), { saldoCapital: balance });
+
+    if (documento.idDocumentoRelacionado) {
+      const docRepo = createCxpRepository('documentos').bind(connection);
+      const gasto = await docRepo.findById(Number(documento.idDocumentoRelacionado), true);
+      if (gasto && gasto.tipoDocumento === 'GASTO_CAJA_CHICA') {
+        await docRepo.update(Number(gasto.idDocumento), {
+          montoAplicado: gasto.totalNeto,
+          saldoPendiente: 0,
+          estado: 'PAGADA',
+        });
+      }
+    }
+  }
 }
 
 export async function readDocumentoApprovalContext(idDocumento: number, actorId?: number): Promise<DocumentoApprovalContext> {
@@ -204,8 +224,12 @@ export function createDocumentoApprovalOperation(run: typeof withCxpTransaction 
         const after = buildDocumentoApprovalContext(loaded.documento, loaded.rules, updatedDecisions, loaded.actor, true);
         if (after.reglas.length > 0 && after.reglas.every(item => item.estado === 'COMPLETA')) {
           await applyCajaChicaFundOnApproval(connection, loaded.documento);
+          const isReembolso = loaded.documento.tipoDocumento === 'REEMBOLSO';
           await createCxpRepository('documentos').bind(connection).update(idDocumento, {
-            estado: 'APROBADA', modificadoPor: input.idUsuarioAprobador,
+            estado: isReembolso ? 'PAGADA' : 'APROBADA',
+            montoAplicado: isReembolso ? loaded.documento.totalNeto : loaded.documento.montoAplicado,
+            saldoPendiente: isReembolso ? 0 : loaded.documento.saldoPendiente,
+            modificadoPor: input.idUsuarioAprobador,
           });
         }
       }
