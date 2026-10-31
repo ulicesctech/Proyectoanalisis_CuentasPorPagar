@@ -1,0 +1,9 @@
+.cxp-documento-filters { display: grid; grid-template-columns: minmax(230px, 1.8fr) minmax(170px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr); align-items: start; gap: 16px; padding: 0 24px 22px; }
+.cxp-documento-filters > * { min-width: 0; }
+@media (max-width: 1200px) {
+  .cxp-documento-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cxp-documento-search { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .cxp-documento-filters { grid-template-columns: minmax(0, 1fr); padding: 0 16px 18px; }
+}

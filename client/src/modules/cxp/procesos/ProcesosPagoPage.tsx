@@ -18,7 +18,7 @@ import type {
 } from '@erp/contracts';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Banknote, CalendarClock, CheckCircle2, Eye, Plus, Printer, RefreshCw, Send, X, XCircle } from 'lucide-react';
+import { Ban, Banknote, CalendarClock, CheckCircle2, Eye, Plus, Printer, RefreshCw, Send, X, XCircle } from 'lucide-react';
 
 import { RelationSelect } from '../components/RelationSelect';
 import { TextInput, TextArea, Select } from '../../../shared/ui-kit';
@@ -32,6 +32,9 @@ import { useOperadorId } from '../operador/operador';
 import { useAuth } from '../auth/session';
 import { etapaActual, flowGuide, navegacionFlujo, rutaEtapaFlujo } from './flujoPago';
 import { ProcesoPagoFlow } from './ProcesoPagoFlow';
+import { CxpCaptureSteps } from '../components/CxpSteps';
+import { DocumentoProcesoSearch, documentosCompatibles, type OpcionDocumentoProceso } from './DocumentoProcesoSearch';
+import { CxpBackToMenu } from '../components/CxpBackToMenu';
 
 const titles: Record<ProcesoPago['estado'], string> = {
   EMITIDA: 'Contraseña emitida',
@@ -277,6 +280,30 @@ export function ProcesosPagoPage({
     });
 
   // Esta consulta no necesita recargar las cuatro bandejas del resumen.
+  function changeProvider(value: string) {
+    if (value === provider) return;
+    if (chosen.length && !window.confirm('Cambiar de proveedor quitará los documentos seleccionados, las cuentas, el medio y la fecha de pago. ¿Continuar?')) return;
+    optionsAbort.current?.abort(); optionsRequest.current += 1;
+    setProvider(value); setSearch(''); setOptionsError(''); setChosen([]);
+    setOrigin(''); setDestination(''); setPaymentMethod(''); setDate(''); setOptions(null);
+  }
+
+  function chooseDocument(doc: OpcionDocumentoProceso, result: OpcionesProceso) {
+    const first = options?.documentos.find(current => chosen.includes(current.id));
+    const incompatible = first && !documentosCompatibles(first, doc);
+    if (incompatible && !window.confirm('El documento tiene otro proveedor, sucursal o moneda. Para seleccionarlo se quitarán los documentos actuales, las cuentas, el medio y la fecha de pago. ¿Continuar?')) return false;
+    optionsAbort.current?.abort(); optionsRequest.current += 1; setOptionsLoading(false);
+    if (!first || incompatible) { setOrigin(''); setDestination(''); setPaymentMethod(''); setDate(''); }
+    const nextChosen = incompatible ? [doc.id] : [...new Set([...chosen, doc.id])];
+    setOptions(previous => ({ ...result, documentos: [doc,
+      ...(result.documentos.filter(row => row.id !== doc.id && row.proveedor === doc.proveedor)),
+      ...(previous?.documentos ?? []).filter(row => nextChosen.includes(row.id) && row.id !== doc.id && !result.documentos.some(next => next.id === row.id)),
+    ] }));
+    setProvider(String(doc.proveedor)); setProviderLabel(doc.proveedorNombre || `Proveedor #${doc.proveedor}`);
+    setChosen(nextChosen); setOptionsError(''); setSearch('');
+    return true;
+  }
+
   async function loadProviderOptions(query = search) {
     optionsAbort.current?.abort();
     const requestId = ++optionsRequest.current;
@@ -1027,16 +1054,12 @@ export function ProcesosPagoPage({
                 if (createStep < 2) setCreateStep(step => step + 1);
                 else void create();
               }}>
-                <ol className="cxp-wizard-progress" aria-label="Pasos para crear contraseña">
-                  {['Facturas', 'Datos del pago', 'Revisar'].map((label, index) => <li key={label}
-                    aria-current={createStep === index ? 'step' : undefined}>
-                    <span>{index + 1}</span> {label}
-                  </li>)}
-                </ol>
+                <CxpCaptureSteps steps={['Facturas', 'Datos del pago', 'Revisar']} current={createStep} label="Pasos para crear contraseña" />
                 <h3 className="font-semibold" tabIndex={-1} data-step-title>
-                  {['1. Seleccioná proveedor y facturas', '2. Indicá las cuentas y la fecha', '3. Revisá antes de crear'][createStep]}
+                  {['1. Buscá una factura o seleccioná el proveedor', '2. Indicá las cuentas y la fecha', '3. Revisá antes de crear'][createStep]}
                 </h3>
                 <fieldset hidden={createStep !== 0} disabled={busy || optionsLoading || createStep !== 0} className="space-y-5 min-w-0">
+                <DocumentoProcesoSearch proveedor={provider} disabled={busy || optionsLoading} onSelect={chooseDocument} />
                 <RelationSelect
                   catalog="proveedores"
                   id="cxp-process-provider"
@@ -1045,37 +1068,8 @@ export function ProcesosPagoPage({
                   required
                   readOnly={busy || optionsLoading}
                   value={provider}
-                  onChange={value => {
-                    setProvider(value);
-                    setSearch('');
-                    setOptionsError('');
-                    setChosen([]);
-                    setOrigin('');
-                    setDestination('');
-                    setPaymentMethod('');
-                    setOptions(null);
-                  }}
+                  onChange={changeProvider}
                 />
-
-                <div className="flex flex-wrap items-end gap-3">
-                  {input(
-                    'Buscar factura del proveedor',
-                    search,
-                    setSearch,
-                    {
-                      maxLength: 80,
-                      placeholder: 'Ej. F-001',
-                    },
-                  )}
-
-                  <Button
-                    variant="secondary"
-                    disabled={busy || optionsLoading || !provider}
-                    onClick={() => void loadProviderOptions()}
-                  >
-                    Buscar
-                  </Button>
-                </div>
 
                 {optionsError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   <p>{optionsError}</p>
@@ -1092,7 +1086,7 @@ export function ProcesosPagoPage({
                     </p>
                   </div>
 
-                  <div className="max-h-60 divide-y overflow-auto px-4">
+                  <div className="max-h-60 divide-y divide-slate-200 overflow-auto px-4">
                     {!optionsError && options?.documentos.map(documento => (
                       <label
                         key={documento.id}
@@ -1125,6 +1119,7 @@ export function ProcesosPagoPage({
                           <strong>{documento.nombre}</strong>
                           {' · '}
                           {money(documento.saldo, documento.moneda)}
+                          <small className="block text-slate-500">{documento.proveedorNombre || `Proveedor #${documento.proveedor}`} · Sucursal #{documento.sucursal}</small>
                         </span>
                       </label>
                     ))}
@@ -1133,7 +1128,7 @@ export function ProcesosPagoPage({
                       <p className="py-4 text-sm text-slate-500">
                         {provider
                           ? 'No hay facturas aprobadas con saldo disponible para este proveedor y los criterios actuales.'
-                          : 'Seleccioná un proveedor para consultar sus facturas.'}
+                          : 'Buscá un número arriba o seleccioná un proveedor para consultar sus facturas.'}
                       </p>
                     )}
                   </div>
@@ -1255,6 +1250,7 @@ export function ProcesosPagoPage({
                 </fieldset>
                 {createStep === 2 && <div className="cxp-review space-y-3 rounded-xl bg-slate-50 p-4">
                   <p><strong>Proveedor:</strong> {providerLabel || `#${provider}`}</p>
+                  <p><strong>Sucursal y moneda:</strong> #{options?.documentos.find(d => chosen.includes(d.id))?.sucursal} · {options?.documentos.find(d => chosen.includes(d.id))?.moneda}</p>
                   <p><strong>Medio de pago:</strong> {selectedForm?.nombre}</p>
                   <p><strong>Cuenta de la empresa:</strong> {options?.origenes.find(c => String(c.id) === origin)?.nombre}</p>
                   <p><strong>Cuenta del proveedor:</strong> {options?.destinos.find(c => String(c.id) === destination)?.nombre}</p>
@@ -1298,15 +1294,12 @@ export function ProcesosPagoPage({
 
         <header className="cxp-workspace-header">
           <div className="cxp-workspace-heading">
-            <button type="button" className="cxp-workspace-back" onClick={() => navigate('/cxp')}>
-              <ArrowLeft size={14} aria-hidden="true" /> Cuentas por pagar
-            </button>
+            <div className="mb-3"><CxpBackToMenu /></div>
             <h1>{lanePresentation[bandeja].title}</h1>
             <p>{lanePresentation[bandeja].description}</p>
           </div>
           <div className="cxp-workspace-context">
             <div className="cxp-workspace-operator">
-              <p className="text-sm text-slate-700">Usuario autenticado: {actor?.nombre ?? 'Sin acceso CXP'} · {session?.actor?.nombreRol ?? 'Rol activo'}</p>
             </div>
             {actor && bandeja === 'contrasenas' && can('CREAR') && (
               <Button icon={Plus} onClick={() => { setCreateStep(0); setCreateOpen(true); }} disabled={busy}>

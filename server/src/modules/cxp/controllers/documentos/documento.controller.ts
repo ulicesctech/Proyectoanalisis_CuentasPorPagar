@@ -8,16 +8,19 @@ import {
 import { previewDocumentoDueDate } from '../../services/documentos/documento.dueDate';
 import { documentoDteReads, uploadDocumentoDte } from '../../services/documentos/documentoArchivo.service';
 import { documentoPaymentOperations, listDocumentoEligiblePayments } from '../../services/documentos/documento.payment';
+import { documentoPagosContexto } from '../../services/documentos/documento.pagosContexto';
 import type { Request, Response, NextFunction } from 'express';
 import { requireActorId, withActorField } from '../../services/actorFields';
 import { cxpActor } from '../../services/identidad';
 import { CxpError } from '../../services/errors';
 import { documentoComponentOperations } from '../../services/documentos/documento.componentes';
+import { documentoTributoOpciones } from '../../services/documentos/documento.tributoOpciones';
 
 const baseController = createCxpController(cxpDocumentoService);
 
 export const cxpDocumentoController = {
   ...baseController,
+  async taxOptions(req: Request,res: Response,next: NextFunction){try{res.json(await documentoTributoOpciones(Number(req.params.id)));}catch(error){next(error);}},
   async components(req: Request, res: Response, next: NextFunction) {
     try { res.json(await documentoComponentOperations.read(Number(req.params.id))); } catch (error) { next(error); }
   },
@@ -85,6 +88,9 @@ export const cxpDocumentoController = {
   async eligiblePayments(req: Request, res: Response, next: NextFunction) {
     try { res.json(await listDocumentoEligiblePayments(Number(req.params.id), cxpStringQuery(req, 'search'))); }
     catch (error) { next(error); }
+  },
+  async paymentContext(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await documentoPagosContexto(Number(req.params.id))); } catch (error) { next(error); }
   },
   async applyPayment(req: Request, res: Response, next: NextFunction) {
     try { res.status(201).json(await documentoPaymentOperations.apply(Number(req.params.id), withActorField(req.body, 'aplicadoPor', requireActorId(res)))); }

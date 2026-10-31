@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   calcularDocumentoComponentes, componenteLineaDatos, componenteTributoDatos, cxpMoneySum, getCxpEntity,
-  type CxpConceptoLinea, type CxpConceptoTributo, type CxpDocumentoComponentesContexto, type CxpRecord,
+  type CxpConceptoLinea, type CxpConceptoTributo, type CxpDocumentoComponentesContexto, type CxpRecord, type CxpTributosOpciones,
 } from '@erp/contracts';
-import { Button, Select, TextInput } from '../../../../shared/ui-kit';
+import { Select, TextInput } from '../../../../shared/ui-kit';
+import { CxpButton as Button } from '../../components/CxpButton';
+import { useCxpFormGuard, useCxpPendingChanges } from '../../components/CxpFormGuard';
+import { draftFingerprint } from '../../components/draftFingerprint';
+import { SearchableSelect } from '../../components/SearchableSelect';
 import { Modal } from '../../../../shared/components';
 import { apiClient, ApiError } from '../../api';
 import { useAuth } from '../../auth/session';
@@ -22,15 +26,22 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
   const { session } = useAuth();
   const [context, setContext] = useState<CxpDocumentoComponentesContexto | null>(null);
   const [lineas, setLines] = useState<CxpConceptoLinea[]>([]), [tributos, setTaxes] = useState<CxpConceptoTributo[]>([]);
-  const [removed, setRemoved] = useState<number[]>([]), [dirty, setDirty] = useState(false);
+  const [removed, setRemoved] = useState<number[]>([]);
+  const baseline = useRef(''), draftBaseline = useRef(''), savingRef = useRef(false);
+  const { confirm, discard } = useCxpFormGuard();
   const [error, setError] = useState(''), [saving, setSaving] = useState(false), [reload, setReload] = useState(0);
   const [lineDraft, setLineDraft] = useState<LineDraft | null>(null), [taxDraft, setTaxDraft] = useState<TaxDraft | null>(null);
+  const [taxOptions,setTaxOptions] = useState<CxpTributosOpciones>({identificaciones:[],reglas:[]});
+  const [taxOptionsError,setTaxOptionsError] = useState(''), [taxOptionsLoading,setTaxOptionsLoading] = useState(false), [taxSearch,setTaxSearch] = useState(''), [taxAttempt,setTaxAttempt] = useState(0);
   const [touched, setTouched] = useState<Record<string, boolean>>({}), [submitted, setSubmitted] = useState(false);
-  const accept = (value: CxpDocumentoComponentesContexto) => { setContext(value); setLines(value.lineas); setTaxes(value.tributos); setRemoved([]); setDirty(false); };
+  const dirty = !!context && draftFingerprint({lineas,tributos}) !== baseline.current;
+  const draftDirty = !!(lineDraft ?? taxDraft) && draftFingerprint(lineDraft ?? taxDraft) !== draftBaseline.current;
+  const clearPending = useCxpPendingChanges(dirty || draftDirty, saving);
+  const accept = (value: CxpDocumentoComponentesContexto) => { baseline.current = draftFingerprint({lineas:value.lineas,tributos:value.tributos}); setContext(value); setLines(value.lineas); setTaxes(value.tributos); setRemoved([]); clearPending(); };
   useEffect(() => {
-    onDirtyChange?.(dirty);
+    onDirtyChange?.(dirty || draftDirty);
     return () => onDirtyChange?.(false);
-  }, [dirty, onDirtyChange]);
+  }, [dirty, draftDirty, onDirtyChange]);
   useEffect(() => {
     let active = true;
     setContext(null); setError('');
@@ -38,43 +49,55 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
       .then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(reason.message || 'No se pudo cargar la captura.'); });
     return () => { active = false; };
   }, [id, reload]);
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
+  useEffect(()=>{
+    if(!context)return;let active=true;setTaxOptionsLoading(true);setTaxOptionsError('');
+    apiClient.get<CxpTributosOpciones>(`/cxp/documentos/${id}/opciones-tributos`).then(next=>{if(active)setTaxOptions(next);}).catch(()=>{if(active)setTaxOptionsError('No se pudieron consultar las opciones. Puedes conservar o capturar el tributo del comprobante.');}).finally(()=>{if(active)setTaxOptionsLoading(false);});
+    return()=>{active=false;};
+  },[id,context?.version,taxAttempt]);
   let computed: ReturnType<typeof calcularDocumentoComponentes> | null = null;
   try { if (context) computed = calcularDocumentoComponentes(context.documento, lineas, tributos); }
   catch { /* Un desbordamiento se muestra y bloquea el guardado. */ }
-  const editable = !!context?.editable && !!session?.actor?.permisos.includes('CREAR') && !saving;
+  const canEdit = !!context?.editable && !!session?.actor?.permisos.includes('CREAR');
+  const editable = canEdit && !saving;
   const currency = String(context?.documento.moneda ?? '');
   const money = (value: unknown) => formatDocumentoMoney(value, currency);
   const lineNumber = (row?: CxpConceptoLinea) => !row ? 'sin referencia' : row.numeroLinea ?? Math.max(0, ...(context?.lineas ?? []).map(line => line.numeroLinea ?? 0)) + lineas.filter(line => !line.idDetalle).findIndex(line => line.clave === row.clave) + 1;
   const resetModal = () => { setTouched({}); setSubmitted(false); };
   const openLine = (row?: CxpConceptoLinea) => {
-    resetModal(); setLineDraft({ row: row ?? { clave: newKey(), datos: {} as CxpConceptoLinea['datos'] },
-      values: componentFormValues('documentos-detalle', row?.datos as CxpRecord | undefined) });
+    const next = { row: row ?? { clave: newKey(), datos: {} as CxpConceptoLinea['datos'] }, values: componentFormValues('documentos-detalle', row?.datos as CxpRecord | undefined) };
+    draftBaseline.current = draftFingerprint(next); resetModal(); setLineDraft(next);
   };
   const reference = (line: string | null) => line === null
     ? cxpMoneySum(...(computed?.lineas ?? []).map(row => Number(row.datos.subtotal)))
     : Number(computed?.lineas.find(row => row.clave === line)?.datos.subtotal ?? 0);
   const openTax = (row?: CxpConceptoTributo, line: string | null = null) => {
-    resetModal(); setTaxDraft({ row: row ?? { clave: newKey(), linea: line, calculo: 'PORCENTAJE', base: 'DERIVADA',
+    const next: TaxDraft = { row: row ?? { clave: newKey(), linea: line, calculo: 'PORCENTAJE', base: 'DERIVADA',
       tratamiento: 'NO_RECUPERABLE', baseRevisadaPara: reference(line), datos: {} as CxpConceptoTributo['datos'] },
-      values: componentFormValues('documentos-tributos', row?.datos as CxpRecord | undefined) });
+      values: componentFormValues('documentos-tributos', row?.datos as CxpRecord | undefined) };
+    draftBaseline.current = draftFingerprint(next); resetModal(); setTaxDraft(next);
   };
-  const deleteTax = (row: CxpConceptoTributo) => {
-    if (!window.confirm(`Quitar el tributo ${row.datos.nombreTributo}. La eliminación se registrará al guardar los conceptos.`)) return;
+  const deleteTax = async (row: CxpConceptoTributo) => {
+    if (!await confirm({title:'Quitar tributo',description:`Quitar el tributo ${row.datos.nombreTributo}. La eliminación se registrará al guardar los conceptos.`,stay:'Conservar',discard:'Quitar tributo'})) return;
     setTaxes(current => current.filter(item => item.clave !== row.clave));
-    if (row.idTributo) setRemoved(current => [...current, row.idTributo!]); setDirty(true);
+    if (row.idTributo) setRemoved(current => [...current, row.idTributo!]);
   };
-  const deleteLine = (row: CxpConceptoLinea) => {
+  const deleteLine = async (row: CxpConceptoLinea) => {
     const linked = tributos.filter(tax => tax.linea === row.clave);
-    if (!window.confirm(`Quitar «${row.datos.descripcion}» y sus ${linked.length} tributos vinculados. Los tributos generales se conservan. Se aplicará al guardar.`)) return;
+    if (!await confirm({title:'Quitar línea',description:`Quitar «${row.datos.descripcion}» y sus ${linked.length} tributos vinculados. Los tributos generales se conservan. Se aplicará al guardar.`,stay:'Conservar',discard:'Quitar línea'})) return;
     setLines(current => current.filter(item => item.clave !== row.clave)); setTaxes(current => current.filter(tax => tax.linea !== row.clave));
-    setRemoved(current => [...current, ...linked.flatMap(tax => tax.idTributo ? [tax.idTributo] : [])]); setDirty(true);
+    setRemoved(current => [...current, ...linked.flatMap(tax => tax.idTributo ? [tax.idTributo] : [])]);
   };
   const draft = lineDraft ?? taxDraft;
+  const taxCatalog = [...new Map([...(context?.catalogo??[]).map(row=>({...row,origen:'DOCUMENTO'})),...taxOptions.identificaciones]
+    .map(row=>[`${row.tipo}:${row.codigo}:${row.nombre}`,row] as const)).values()];
+  const reusable = taxCatalog.map((row,index)=>({value:String(index),label:`${row.nombre} · ${row.codigo} · ${row.tipo} · ${row.origen==='DOCUMENTO'?'Este documento':row.origen==='HISTORICO'?'Identificación histórica':'Configuración'}`}));
+  const ruleBase = taxDraft?.row.base==='MANUAL'?cxpFormNumber(taxDraft.values.baseImponible):reference(taxDraft?.row.linea??null);
+  const simpleRules = taxOptions.reglas.filter(rule=>rule.sobreExcedente==='N'&&!(rule.porcentaje>0&&rule.montoFijo>0)&&Number.isFinite(ruleBase)&&ruleBase>=rule.baseDesde&&(rule.baseHasta==null||ruleBase<=rule.baseHasta));
+  const applyRule = async(index:number)=>{
+    const rule=simpleRules[index],key=taxDraft?.row.clave;if(!rule||!key)return;
+    if(!await confirm({title:'Usar valores de la regla',description:`${rule.codigoRegla} v${rule.versionRegla}: ${rule.porcentaje}% y monto fijo ${rule.montoFijo}. Solo se copiarán a este borrador; revisa su base y conciliación con el comprobante. No se actualizarán documentos históricos.`,stay:'Conservar captura',discard:'Usar regla'}))return;
+    setTaxDraft(current=>current?.row.clave===key?{...current,values:{...current.values,tipoTributo:rule.tipoTributo,codigoTributo:rule.codigoTributo,nombreTributo:rule.nombreTributo,porcentaje:String(rule.porcentaje),monto:String(rule.montoFijo)},row:{...current.row,calculo:rule.montoFijo>0?'FIJO':'PORCENTAJE',baseRevisadaPara:reference(current.row.linea),tratamiento:rule.tipoTributo==='IMPUESTO'?(current.values.tipoTributo==='IMPUESTO'?current.row.tratamiento:'NO_RECUPERABLE'):'CONSERVAR'}}:current);
+  };
   const resource = lineDraft ? 'documentos-detalle' : 'documentos-tributos';
   const schema = lineDraft ? componenteLineaDatos : componenteTributoDatos;
   let draftData: CxpRecord = {}, draftErrors: Record<string, string> = {}, linePreview: CxpRecord = {};
@@ -124,12 +147,13 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
       setLines(current => current.some(item => item.clave === row.clave) ? current.map(item => item.clave === row.clave ? row : item) : [...current, row]); setLineDraft(null); }
     if (taxDraft) { const row = { ...taxDraft.row, datos } as CxpConceptoTributo;
       setTaxes(current => current.some(item => item.clave === row.clave) ? current.map(item => item.clave === row.clave ? row : item) : [...current, row]); setTaxDraft(null); }
-    setDirty(true);
   };
   const save = async (adoptarTotales = false) => {
-    if (!context || !computed || !editable) return;
+    if (!context || !computed || !editable || savingRef.current || (!adoptarTotales && !dirty)) return;
     if (computed.issues.length) { setError('Revisa los tributos señalados antes de guardar.'); return; }
-    if (adoptarTotales && !window.confirm('Se sustituirán los totales declarados de la cabecera por el cálculo de conceptos. Confirma que coinciden con el comprobante. Los valores anteriores quedarán en el historial.')) return;
+    if (adoptarTotales && !await confirm({title:'Adoptar totales calculados',description:'Se sustituirán los totales declarados de la cabecera por el cálculo de conceptos. Confirma que coinciden con el comprobante. Los valores anteriores quedarán en el historial.',stay:'Revisar conceptos',discard:'Guardar y adoptar'})) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true); setError('');
     try {
       const data = serializeComponents(computed.lineas as CxpConceptoLinea[], computed.tributos as CxpConceptoTributo[]);
@@ -137,7 +161,7 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
         ...data, version: context.version, adoptarTotales, confirmarEliminaciones: [...new Set(removed)] });
       accept(result); onSaved?.();
     } catch (reason) { setError(reason instanceof ApiError ? `${reason.message}${Array.isArray(reason.details) ? ' ' + reason.details.map(item => item.mensaje).join(' ') : ''}` : 'No se pudo guardar la captura.'); }
-    finally { setSaving(false); }
+    finally { savingRef.current = false; setSaving(false); }
   };
   if (!context) return <section aria-label="Captura de conceptos" className="rounded-xl border bg-white p-5">
     {error ? <p role="alert">{error} <Button onClick={() => setReload(value => value + 1)}>Reintentar</Button></p> : 'Cargando líneas y tributos…'}</section>;
@@ -145,7 +169,7 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-slate-900">Conceptos del documento</h2>
       <p className="text-sm text-slate-600">Importes en {currency}. Los tributos alimentan impuestos y retenciones; los cambios se guardan juntos.</p></div>
       {editable && <Button onClick={() => openLine()}>Agregar línea</Button>}</div>
-    {!editable && <p className="rounded bg-slate-50 p-3 text-sm">Consulta de conceptos. El estado, las aplicaciones, el tipo de documento o tu permiso impiden editar esta captura.</p>}
+    {!canEdit && <p className="rounded bg-slate-50 p-3 text-sm">Consulta de conceptos. El estado, las aplicaciones, el tipo de documento o tu permiso impiden editar esta captura.</p>}
     {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {!!context.advertencias?.length && <div className="rounded bg-amber-50 p-3 text-sm">{context.advertencias.map((message, index) => <p key={index}>{message}</p>)}</div>}
     {!computed && <p role="alert">Los importes superan la precisión admitida; no se puede guardar.</p>}
@@ -172,23 +196,29 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
       <p className="mt-1 text-xs">La declaración original no cambia al editar conceptos.</p>
       <table className="mt-3 w-full text-sm" aria-label="Declarado y calculado"><thead><tr>{['Importe', 'Declarado', 'Calculado', 'Diferencia'].map(label => <th className="p-2 text-left" key={label}>{label}</th>)}</tr></thead>
         <tbody>{computed?.diferencias.map(row => <tr key={row.campo} className={row.diferencia !== 0 ? 'text-red-700' : ''}><td className="p-2">{labels[row.campo]}</td><td>{money(row.declarado)}</td><td>{money(row.calculado)}</td><td>{money(row.diferencia)}</td></tr>)}</tbody></table>
-      {editable && <div className="mt-3 flex flex-wrap gap-2"><Button disabled={!!computed?.issues.length || !computed} onClick={() => void save(false)}>Guardar conceptos</Button>
-        <Button variant="secondary" disabled={!!computed?.issues.length || !computed} onClick={() => void save(true)}>Guardar y adoptar totales calculados</Button>
-        <Button variant="secondary" onClick={() => { if (!dirty || window.confirm('Descartar los cambios locales y recargar los conceptos guardados.')) setReload(value => value + 1); }}>Recargar conceptos</Button></div>}
-      {dirty && <p role="status" className="mt-2 text-xs">Hay cambios locales sin guardar.</p>}</div>
-    <Modal isOpen={!!draft} onClose={() => { setLineDraft(null); setTaxDraft(null); }} title={lineDraft ? 'Concepto del documento' : 'Tributo del documento'} size="lg">
+      <p className="mt-3 text-xs text-slate-600">Guardar conceptos conserva la cabecera declarada. Adoptar totales también actualiza sus importes y registra los valores anteriores. Recargar recupera lo guardado y descarta los cambios locales confirmados.</p>
+      {canEdit && <div className="mt-3 flex flex-wrap gap-2"><Button disabled={!dirty || saving || !!computed?.issues.length || !computed} onClick={() => void save(false)}>{saving ? 'Guardando conceptos…' : 'Guardar conceptos'}</Button>
+        <Button variant="secondary" disabled={saving || !!computed?.issues.length || !computed || (!dirty && !computed.diferencias.some(row => row.diferencia !== 0))} onClick={() => void save(true)}>Guardar y adoptar totales calculados</Button>
+        <Button variant="secondary" disabled={saving} onClick={() => void discard(() => setReload(value => value + 1), dirty)}>Recargar conceptos</Button></div>}
+      <p role="status" className={`mt-2 text-xs ${dirty || draftDirty ? 'text-amber-800' : 'text-emerald-700'}`}>{saving ? 'Guardando conceptos…' : dirty || draftDirty ? 'Hay cambios pendientes sin guardar.' : 'Todos los conceptos están guardados.'}</p></div>
+    <Modal isOpen={!!draft} onClose={() => void discard(() => { setLineDraft(null); setTaxDraft(null); }, draftDirty)} title={lineDraft ? 'Concepto del documento' : 'Tributo del documento'} size="lg">
       {draft && <form noValidate onSubmit={submitDraft} className="space-y-4">
         {lineDraft && <><div className="grid gap-4 sm:grid-cols-2">{field('descripcion', 'Descripción del concepto')}{field('cantidad', 'Cantidad')}{field('precioUnitario', `Precio unitario (${currency})`)}{field('descuento', 'Descuento (importe)')}</div>
           <p className="text-xs text-slate-600">Descuento monetario; se resta una sola vez. Base = cantidad × precio − descuento. Impuestos y retenciones se capturan como tributos.</p>
           <p aria-live="polite" className="rounded bg-blue-50 p-3 text-sm">Base después del descuento: <strong>{money(linePreview.subtotal)}</strong></p>
           <details><summary className="cursor-pointer text-sm font-semibold">Datos adicionales</summary><div className="mt-3 grid gap-4 sm:grid-cols-2">{lineExtra.map(name => field(name))}</div></details></>}
         {taxDraft && <><div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2"><SearchableSelect id="concepto-tributo-opcion" label="Identificar tributo por nombre o código" value="" options={reusable.filter(row=>row.label.toLowerCase().includes(taxSearch.toLowerCase()))}
+            search={taxSearch} onSearchChange={setTaxSearch} loading={taxOptionsLoading} loadError={taxOptionsError} onRetry={()=>setTaxAttempt(n=>n+1)}
+            placeholder="Seleccionar identificación existente…" onChange={value=>{const row=taxCatalog[Number(value)];if(row)setTaxDraft(current=>current&&({...current,values:{...current.values,tipoTributo:row.tipo,codigoTributo:row.codigo,nombreTributo:row.nombre}}));}} />
+            <p className="mt-2 text-xs text-slate-600">El código identifica el tributo; no es el código de una regla ni una referencia del DTE. Elegir nombre y código conserva los importes y no asigna una tasa.</p>
+          </div>
+          {!!simpleRules.length&&<Select id="concepto-regla" label="Copiar valores de una regla vigente compatible" value="" options={simpleRules.map((rule,index)=>({value:String(index),label:`${rule.codigoRegla} v${rule.versionRegla} · ${rule.nombreTributo} · ${rule.porcentaje}% · Fijo ${rule.montoFijo}`}))} onChange={event=>void applyRule(Number(event.target.value))} />}
           <Select id="concepto-tipoTributo" label="Tipo" value={taxDraft.values.tipoTributo} options={['IMPUESTO', 'RETENCION', 'PERCEPCION'].map(value => ({ value, label: value }))} onChange={event => changeField('tipoTributo', event.target.value)} />
           <Select id="concepto-calculo" label="Cálculo" value={taxDraft.row.calculo} options={[{ value: 'PORCENTAJE', label: 'Porcentual' }, { value: 'FIJO', label: 'Importe fijo' }, ...(taxDraft.row.idTributo ? [{ value: 'CONSERVAR', label: 'Conservar cálculo histórico' }] : [])]}
             onChange={event => setTaxDraft(current => current && ({ ...current, row: { ...current.row, calculo: event.target.value, baseRevisadaPara: reference(current.row.linea) } }))} />
-          {field('codigoTributo', 'Código')}{field('nombreTributo', 'Nombre')}
-          {!!context.catalogo.length && <Select id="concepto-catalogo" label="Reutilizar código y nombre del documento" value="" options={context.catalogo.map((row, index) => ({ value: String(index), label: `${row.codigo} · ${row.nombre}` }))}
-            onChange={event => { const row = context.catalogo[Number(event.target.value)]; changeField('tipoTributo', row.tipo); changeField('codigoTributo', row.codigo); changeField('nombreTributo', row.nombre); }} />}
+          {field('codigoTributo', 'Código del tributo')}{field('nombreTributo', 'Nombre del tributo')}
+          {!simpleRules.length&&<p className="text-xs text-slate-600 sm:col-span-2">No hay una regla simple compatible para precargar importes. Usa los valores del comprobante. Las identificaciones históricas no determinan vigencia, base ni porcentaje.</p>}
           <Select id="concepto-aplicacion" label="Aplicación" value={taxDraft.row.linea ?? ''} placeholder="" options={[{ value: '', label: 'Documento completo' }, ...lineas.map(row => ({ value: row.clave, label: `Línea ${lineNumber(row)} · ${row.datos.descripcion}` }))]}
             onChange={event => setTaxDraft(current => current && ({ ...current, row: { ...current.row, linea: event.target.value || null, baseRevisadaPara: null } }))} />
           <Select id="concepto-baseOrigen" label="Origen de base" value={taxDraft.row.base} options={[{ value: 'DERIVADA', label: 'Base calculada del concepto' }, { value: 'MANUAL', label: 'Base manual, con revisión' }]}
@@ -206,7 +236,7 @@ export function DocumentoComponentesPanel({ id, onSaved, onDirtyChange }: { id: 
             <Button id="concepto-baseRevisadaPara" variant="secondary" onClick={() => setTaxDraft(current => current && ({ ...current, row: { ...current.row, baseRevisadaPara: reference(current.row.linea) } }))}>Confirmar revisión de base e importe</Button></div>}
           <details><summary className="cursor-pointer text-sm font-semibold">Datos adicionales</summary><div className="mt-3 grid gap-4 sm:grid-cols-2">{field('numeroConstancia')}{field('periodoFiscal')}</div></details></>}
         {submitted && Object.keys(draftErrors).length > 0 && <p role="alert" className="text-sm text-red-700">Revisa los campos indicados antes de agregar el concepto.</p>}
-        <div className="flex justify-end gap-2 border-t pt-4"><Button variant="secondary" onClick={() => { setLineDraft(null); setTaxDraft(null); }}>Cancelar</Button>
+        <div className="flex justify-end gap-2 border-t pt-4"><Button variant="secondary" onClick={() => void discard(() => { setLineDraft(null); setTaxDraft(null); }, draftDirty)}>Cancelar</Button>
           <Button type="submit">{lineDraft ? 'Aplicar línea' : 'Aplicar tributo'}</Button></div>
       </form>}
     </Modal>

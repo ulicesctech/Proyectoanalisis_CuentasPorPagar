@@ -27,7 +27,7 @@ export interface CxpActorFieldRules {
 const estado = (campo: string, ...values: string[]): CxpActorTransition => ({ campo, field: 'estado', values });
 
 export const CXP_ACTOR_FIELDS: Partial<Record<CxpResource, CxpActorFieldRules>> = {
-  parametros: { onUpdate: ['modificadoPor'] },
+  parametros: { onCreate: ['modificadoPor'], onUpdate: ['modificadoPor'] },
   periodos: { onTransition: [estado('cerradoPor', 'CERRADO'), estado('reabiertoPor', 'REABIERTO')] },
   'cuentas-bancarias': {
     onCreate: ['creadoPor'], onUpdate: ['modificadoPor'],

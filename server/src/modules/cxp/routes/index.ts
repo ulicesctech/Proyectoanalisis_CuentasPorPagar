@@ -1,4 +1,7 @@
 import procesosRoutes from './procesos.routes';
+import administracionRoutes from './administracion.routes';
+import {CXP_ADMIN_RESOURCES} from '@erp/contracts';
+import {protegerCrudAdministrativo} from '../services/administracion/politica';
 import { Router } from 'express';
 import { listCxpOptions } from '../repositories/catalogos.repository';
 import { cxpStringQuery } from '../controllers/crud.controller';
@@ -32,6 +35,8 @@ import bitacoraRoutes from '../reports/bitacora/bitacora.routes';
 
 const router = Router();
 router.use(requireCxpSession);
+router.use((req,res,next)=>{if((CXP_ADMIN_RESOURCES as readonly string[]).includes(req.path.split('/')[1]))return protegerCrudAdministrativo(req,res,next);next();});
+router.use('/administracion',administracionRoutes);
 router.use('/procesos', procesosRoutes);
 
 router.get('/catalogos/:catalog', async (req, res, next) => {

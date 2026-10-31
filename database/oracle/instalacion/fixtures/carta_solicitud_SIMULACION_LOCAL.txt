@@ -1,0 +1,4 @@
+SIMULACION LOCAL - SIN VALIDEZ BANCARIA
+Solicitud ficticia de alta de las cuentas de los 25 proveedores CXP_DEMO25_PROV_01 a CXP_DEMO25_PROV_25.
+Solo para probar CXP en el proyecto universitario. No acredita identidad, titularidad ni una revision humana.
+No corresponde a una operacion de pago ni a un documento del ejercicio original.

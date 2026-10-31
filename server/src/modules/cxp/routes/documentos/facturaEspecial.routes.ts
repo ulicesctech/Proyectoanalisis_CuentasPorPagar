@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import { registerIdParams } from '../../../../shared';
 import { cxpFacturaEspecialController as controller } from '../../controllers/documentos/facturaEspecial.controller';
+import { facturaEspecialConfiguracion } from '../../services/documentos/facturaEspecial.configuracion';
 
 const router = Router();
 registerIdParams(router);
 
 router.get('/', controller.list);
+router.get('/configuracion', async (req,res,next) => {
+  try {res.json(await facturaEspecialConfiguracion(typeof req.query.fechaDocumento==='string'?req.query.fechaDocumento:undefined,typeof req.query.moneda==='string'?req.query.moneda:undefined));}catch(error){next(error);}
+});
 router.post('/calcular', controller.calcular);
 router.post('/', controller.create);
 router.get('/:id', controller.getOne);

@@ -84,7 +84,7 @@ export const CXP_HOME_HEADER = {
   icon: Wallet,
   title: 'Módulo de Cuentas por Pagar',
   description: 'Administración integral de obligaciones con proveedores: registro de documentos, facturas especiales, '
-    + 'programación de pagos, control y conciliación bancaria.',
+    + 'programación de pagos, trazabilidad y comparación de registros.',
 };
 
 export const CXP_HOME_SECTIONS: ModuleSectionConfig[] = [
@@ -101,10 +101,10 @@ export const CXP_HOME_SECTIONS: ModuleSectionConfig[] = [
         icon: ReceiptText, color: 'violet', linkText: 'Gestionar facturas', tag: 'Fiscal', path: '/cxp/facturas-especiales' },
       { title: 'Pagos', description: 'Programación, aprobación y emisión de pagos a proveedores.', icon: Wallet,
         color: 'emerald', linkText: 'Ver pagos', tag: 'Tesorería', path: '/cxp/contrasenas' },
-      { title: 'Control', description: 'Monitoreo de saldos, vencimientos y antigüedad.', icon: Gauge,
-        color: 'amber', linkText: 'Ver control', tag: 'Métricas & KPIs', path: '/cxp/reglas-aprobacion' },
-      { title: 'Conciliaciones', description: 'Conciliación bancaria y resolución de diferencias.', icon: Scale,
-        color: 'cyan', linkText: 'Conciliar', tag: 'Bancos', path: '/cxp/conciliaciones-proveedor' },
+      { title: 'Control', description: 'Reglas de aprobación, decisiones, seguimiento y evidencias.', icon: Gauge,
+        color: 'amber', linkText: 'Consultar control', tag: 'Trazabilidad', path: '/cxp/reglas-aprobacion' },
+      { title: 'Conciliaciones', description: 'Estados de cuenta de proveedores y referencias de pagos.', icon: Scale,
+        color: 'cyan', linkText: 'Comparar registros', tag: 'Comparación', path: '/cxp/conciliaciones-proveedor' },
       { title: 'Reportes', description: 'Antigüedad de saldos, estadística de compras y retenciones de IVA e ISR en un resumen.',
         icon: ChartColumnStacked, color: 'rose', linkText: 'Ver reportes', tag: 'Análisis', path: '/cxp/reportes' },
     ],
@@ -118,9 +118,9 @@ export const CXP_HOME_SECTIONS: ModuleSectionConfig[] = [
     cards: [
       { title: 'Parámetros', description: 'Valores y reglas generales del módulo.', icon: SlidersHorizontal,
         color: 'indigo', linkText: 'Configurar parámetros', tag: 'Parametrización', path: '/cxp/parametros' },
-      { title: 'Períodos', description: 'Apertura y cierre de períodos contables.', icon: CalendarRange,
+      { title: 'Períodos', description: 'Cobertura de fechas por sucursal para programar pagos.', icon: CalendarRange,
         color: 'rose', linkText: 'Ver períodos', tag: 'Contabilidad', path: '/cxp/periodos' },
-      { title: 'Cuentas bancarias', description: 'Cuentas de la empresa usadas para pagos.', icon: Landmark,
+      { title: 'Cuentas bancarias', description: 'Orígenes de empresa, destinos de proveedor y aprobación CXP.', icon: Landmark,
         color: 'teal', linkText: 'Gestionar cuentas', tag: 'Tesorería', path: '/cxp/cuentas-bancarias' },
       { title: 'Compromisos', description: 'Registro y control de compromisos de pago.', icon: Handshake,
         color: 'orange', linkText: 'Ver compromisos', tag: 'Finanzas', path: '/cxp/compromisos' },

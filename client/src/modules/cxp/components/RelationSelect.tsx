@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CxpOption } from '@erp/contracts';
 import { apiClient, buildQueryString } from '../api';
 import { Button, TextInput } from '../../../shared/ui-kit';
 import { SearchableSelect } from './SearchableSelect';
+import { useAuth } from '../auth/session';
+import { useCxpFormGuard, useCxpPendingChanges } from './CxpFormGuard';
 
-const cache = new Map<string, { expires: number; result: Promise<CxpOption[]> }>();
-export const clearCxpCatalogCache = () => cache.clear();
+import { cxpCatalogCache as cache, clearCxpCatalogCache } from './catalogCache';
+export { clearCxpCatalogCache } from './catalogCache';
 
 export interface RelationSelectProps {
   catalog: string;
@@ -28,6 +30,7 @@ export interface RelationSelectProps {
 const CATALOG_LIMIT = 50;
 
 export function RelationSelect({ catalog, label, value, onChange, required, error, readOnly, id, filterField, filterValue, placeholder, allowCreate = true, onLabelChange }: RelationSelectProps) {
+  const { session } = useAuth();
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState<CxpOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,6 +45,11 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
   const [newNombre, setNewNombre] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const createBaseline = useRef('');
+  const createDirty = showModal && JSON.stringify([newNit,newNombre]) !== createBaseline.current;
+  const clearPendingCreate = useCxpPendingChanges(createDirty,creating);
+  const { discard } = useCxpFormGuard();
+  const closeCreate = () => { if(!creating)void discard(()=>setShowModal(false),createDirty); };
 
   useEffect(() => {
     let active = true;
@@ -57,7 +65,7 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
       cache.set(path, { expires: Date.now() + 30000, result });
       result.then(next => { if (active) setRows(next); })
         .catch(() => {
-          cache.delete(path);
+          if (cache.get(path)?.result === result) cache.delete(path);
           if (active) setLoadError('No se pudo cargar este catálogo.');
         })
         .finally(() => { if (active) setLoading(false); });
@@ -85,6 +93,7 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
         nombreEntidad: newNombre.trim(),
       });
       clearCxpCatalogCache();
+      clearPendingCreate();
       const newOpt: CxpOption = {
         id: res.idProveedor,
         label: `Proveedor #${res.idProveedor} · ${res.nombreEntidad} · ${res.nit}`,
@@ -103,8 +112,8 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
   };
 
   if (readOnly) return <TextInput id={id} label={label} value={selectedLabel ?? (value ? `#${value}` : '—')} isReadOnly />;
-  const canCreate = allowCreate && catalog === 'proveedores';
-  const openCreate = () => { setShowModal(true); setCreateError(null); setNewNombre(search); };
+  const canCreate = allowCreate && catalog === 'proveedores' && !!session?.actor?.permisos.includes('CREAR');
+  const openCreate = () => { createBaseline.current=JSON.stringify(['',search]);setNewNit('');setShowModal(true); setCreateError(null); setNewNombre(search); };
   return (
     <>
       <SearchableSelect id={id} label={label} value={value} selectedLabel={selectedLabel} options={options}
@@ -119,7 +128,7 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
           <div role="dialog" aria-modal="true" aria-label="Registrar proveedor" data-provider-dialog className="bg-white rounded-xl shadow-2xl max-w-md max-h-[85dvh] overflow-y-auto w-full p-6 border border-slate-200">
             <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-800">Registrar Proveedor (CxP)</h3>
-              <Button type="button" variant="secondary" disabled={creating} aria-label="Cerrar registro de proveedor" onClick={() => setShowModal(false)}>✕</Button>
+              <Button type="button" variant="secondary" disabled={creating} aria-label="Cerrar registro de proveedor" onClick={closeCreate}>✕</Button>
             </div>
 
             <div className="space-y-4">
@@ -158,7 +167,7 @@ export function RelationSelect({ catalog, label, value, onChange, required, erro
               <Button
                 type="button" variant="secondary"
                 disabled={creating}
-                onClick={() => setShowModal(false)}
+                onClick={closeCreate}
               >
                 Cancelar
               </Button>

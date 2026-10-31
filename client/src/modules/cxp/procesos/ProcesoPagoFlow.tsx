@@ -1,5 +1,6 @@
 import type { BandejaProceso, ProcesoPago } from '@erp/contracts';
 import { progresoFlujo, rutaEtapaFlujo } from './flujoPago';
+import { CxpStageMarker } from '../components/CxpSteps';
 
 type Props = {
   proceso: Pick<ProcesoPago, 'estado' | 'codigo'> | null;
@@ -17,12 +18,7 @@ export function ProcesoPagoFlow({ proceso, bandeja, counts, indiceNavegacion, on
         {progresoFlujo(proceso, bandeja, indiceNavegacion).map((step, index) => {
           const completed = step.estado === 'completado';
           const content = <>
-            <span className={[
-              'grid h-9 w-9 place-items-center rounded-full border-2 bg-white text-xs font-bold transition',
-              completed ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                : step.actual ? 'border-blue-500 bg-blue-50 text-blue-700 ring-4 ring-blue-50'
-                  : 'border-slate-300 text-slate-500',
-            ].join(' ')}>{step.numero}</span>
+            <CxpStageMarker number={step.numero} completed={completed} current={step.actual} />
             <strong className={[
               'mt-2 text-xs', completed ? 'text-emerald-700' : step.actual ? 'text-blue-700' : 'text-slate-700',
             ].join(' ')}>{step.label}</strong>

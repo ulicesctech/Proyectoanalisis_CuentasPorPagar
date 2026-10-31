@@ -54,6 +54,9 @@ export function CxpManagementDialog({
     const frame = window.requestAnimationFrame(() => panel.current?.focus());
     const handleKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !panel.current) return;
+      if(document.querySelector('[data-cxp-confirm]'))return;
+      const dialogs=Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).filter(element=>element.getClientRects().length);
+      if(dialogs[dialogs.length-1]!==panel.current)return;
       // Un diálogo anidado (p. ej., registro de proveedor) conserva su propio foco.
       if (panel.current.querySelector('[role="dialog"]')) return;
       if (event.key === 'Escape') {

@@ -150,7 +150,8 @@ export interface ListaProcesos {
 }
 
 export interface OpcionesProceso {
-  documentos: Array<{ id: number; nombre: string; proveedor: number; sucursal: number; moneda: string; saldo: number }>;
+  documentos: Array<{ id: number; nombre: string; proveedor: number; sucursal: number; moneda: string; saldo: number;
+    serie?: string | null; numeroDocumento?: string | null; noFacturaCompra?: string | null; proveedorNombre?: string | null }>;
   origenes: Array<{ id: number; nombre: string; moneda: string }>;
   destinos: Array<{ id: number; nombre: string; proveedor: number; moneda: string }>;
   formasPago: FormaPagoProceso[];

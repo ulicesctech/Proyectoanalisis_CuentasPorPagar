@@ -1,4 +1,3 @@
-import { CxpCrudPage } from '../components/CxpCrudPage';
-import { CxpEventoForm } from './components/EventoForm';
+import { CxpAdministracionPage } from '../administracion/CxpAdministracionPage';
 
-export const CxpEventoPage = () => <CxpCrudPage resource="eventos" Form={CxpEventoForm} />;
+export const CxpEventoPage = () => <CxpAdministracionPage resource="eventos" />;

@@ -52,10 +52,14 @@ test('documentos: captura, errores, monedas, conservación entre pasos, registro
     let body;
     if (req.method !== 'GET') { let text = ''; for await (const bytes of req) text += bytes; body = JSON.parse(text || '{}'); }
     const json = value => res.end(JSON.stringify(value));
+    if (url.pathname.endsWith('/contexto-pagos')) return json({reservadoDocumento:0,ordinariosDisponibles:0,motivos:[],procesos:[]});
+    if (url.pathname === '/api/cxp/facturas-especiales/configuracion') return json({fechaDocumento:'2026-10-30',moneda:'GTQ',serie:'FESP',puedeRegistrar:true,impedimentos:[],advertencias:[],reglasVigentes:1});
     if (url.pathname === '/api/auth/session') return json({ username: 'operador.simulado', name: 'Operador autenticado',
       mustChangePassword: false, actor: { id: 7, nombre: 'Operador autenticado', roles: [1], permisos: ['CREAR'] }, csrfToken: 'prueba' });
     if (url.pathname === '/api/cxp/documentos/monedas') return json({ monedaLocal: 'GTQ', fuenteTasas: null,
       monedas: [{ codigo: 'GTQ', nombre: 'Quetzal' }, { codigo: 'USD', nombre: 'Dólar simulado' }] });
+    if (url.pathname === '/api/cxp/proveedores/identidad') { const id=Number(url.searchParams.get('id')||1); return json({proveedores:[{idProveedor:id,nit:id===1?'123-1':'456-2',nombre:id===1?'Proveedor Alfa':'Proveedor Beta',activo:true}],coincidenciasExactas:1,limitado:false}); }
+    if (url.pathname.endsWith('/opciones-tributos')) return json({identificaciones:[],reglas:[]});
     if (url.pathname.startsWith('/api/cxp/catalogos/')) return json([
       { id: 1, label: url.pathname.endsWith('usuarios') ? 'Autor original' : 'Opción de prueba' },
     ]);

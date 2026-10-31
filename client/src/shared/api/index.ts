@@ -4,6 +4,7 @@
 
 import { sessionCsrfToken } from '../../modules/cxp/auth/session';
 import { API_BASE_URL } from './base';
+import { sessionEpoch } from '../../modules/cxp/auth/sessionScope';
 
 const BASE_URL = API_BASE_URL;
 
@@ -22,6 +23,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const epoch = sessionEpoch();
   const csrf = path.startsWith('/cxp/') && !['GET', 'HEAD'].includes(options.method ?? 'GET') ? sessionCsrfToken() : null;
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -32,6 +34,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options.headers,
     },
   });
+  if (path.startsWith('/cxp/') && epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó una respuesta de la cuenta anterior.', 409);
   if (path.startsWith('/cxp/') && response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
 
   if (response.status === 204) {
@@ -39,6 +42,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   const body = await response.json().catch(() => null);
+  if (path.startsWith('/cxp/') && epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó una respuesta de la cuenta anterior.', 409);
 
   if (!response.ok) {
     throw new ApiError(
@@ -65,13 +69,17 @@ export const apiClient = {
     headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
   }),
   async download(path: string): Promise<Blob> {
+    const epoch = sessionEpoch();
     const response = await fetch(`${BASE_URL}${path}`, { credentials: path.startsWith('/cxp/') ? 'include' : 'same-origin' });
+    if (path.startsWith('/cxp/') && epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó una respuesta de la cuenta anterior.', 409);
     if (path.startsWith('/cxp/') && response.status === 401) window.dispatchEvent(new Event('cxp:session-expired'));
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new ApiError(body?.error ?? `Error ${response.status}`, response.status, body?.details);
     }
-    return response.blob();
+    const blob = await response.blob();
+    if (path.startsWith('/cxp/') && epoch !== sessionEpoch()) throw new ApiError('La sesión cambió; se descartó una respuesta de la cuenta anterior.', 409);
+    return blob;
   },
 };
 
