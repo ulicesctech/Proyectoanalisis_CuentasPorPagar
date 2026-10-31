@@ -1,14 +1,44 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { CxpRetencionesFiltros, CxpRetencionesReporte } from '@erp/contracts';
-import { Button, TextInput } from '../../../shared/ui-kit';
+import { TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
-import { retencionesApi, serieColor, type FormatoExportacion, leerPeriodo, parametrosPeriodo } from './api';
+import {
+  FORMATO_ID, FORMATO_MONEDA, filtroUrl, formatoTexto, retencionesApi, serieColor, type FormatoExportacion, leerPeriodo,
+  parametrosReporte,
+} from './api';
 import { ReportesEncabezado } from './components/ReportesEncabezado';
 import { BotonesExportar, Paginacion, TendenciaMensual } from './components/ReporteComponentes';
+import {
+  AtajosPeriodo, CamposPeriodo, PanelFiltros, SelectorMoneda, erroresPeriodo, useNombresProveedor, type ChipFiltro,
+} from './components/FiltrosReporte';
+
+type Formulario = {
+  fechaInicio: string; fechaFin: string; idProveedor: string; codigoTributo: string; moneda: string; numeroConstancia: string;
+};
+const SIN_FILTROS = { idProveedor: '', codigoTributo: '', moneda: '', numeroConstancia: '' };
+
+function leerFormulario(params: URLSearchParams): Formulario {
+  return {
+    ...leerPeriodo(params),
+    idProveedor: filtroUrl(params, 'proveedor', FORMATO_ID),
+    codigoTributo: filtroUrl(params, 'tributo', formatoTexto(30)),
+    moneda: filtroUrl(params, 'moneda', FORMATO_MONEDA),
+    numeroConstancia: filtroUrl(params, 'constancia', formatoTexto(50)),
+  };
+}
+
+const aFiltros = (formulario: Formulario): CxpRetencionesFiltros => ({
+  fechaInicio: formulario.fechaInicio, fechaFin: formulario.fechaFin,
+  idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
+  codigoTributo: formulario.codigoTributo.trim() || undefined,
+  moneda: formulario.moneda.trim().toUpperCase() || undefined,
+  numeroConstancia: formulario.numeroConstancia.trim() || undefined,
+});
+const clave = (formulario: Formulario) => JSON.stringify(aFiltros(formulario));
 
 const POR_PAGINA = 20;
 const SIN_MONEDA = 'SIN MONEDA';
@@ -22,46 +52,68 @@ const proveedorTexto = (id: number | null, nombre: string | null) => nombre ?? (
 export function CxpRetencionesPage() {
   // Período compartido de reportes (?desde=&hasta=); se actualiza al consultar.
   const [params, setParams] = useSearchParams();
+  // setParams cambia de identidad con cada URL: se usa por referencia para no repetir la consulta inicial.
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
   const busquedaUrl = params.toString();
   const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
-  const [periodoInicial] = useState(periodo);
-  const [formulario, setFormulario] = useState({
-    fechaInicio: periodoInicial.fechaInicio, fechaFin: periodoInicial.fechaFin, idProveedor: '', codigoTributo: '', moneda: '', numeroConstancia: '',
-  });
-  const [aplicados, setAplicados] = useState<CxpRetencionesFiltros | null>(null);
+  const [inicial] = useState(() => leerFormulario(new URLSearchParams(busquedaUrl)));
+  const [formulario, setFormulario] = useState<Formulario>(inicial);
+  const [aplicado, setAplicado] = useState<Formulario | null>(null);
+  const [validar, setValidar] = useState(false);
   const [reporte, setReporte] = useState<CxpRetencionesReporte | null>(null);
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState<FormatoExportacion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [foco, setFoco] = useState<Foco | null>(null);
   const [pagina, setPagina] = useState(1);
+  const [nombres, recordarNombre] = useNombresProveedor();
+  const proveedorActual = useRef(formulario.idProveedor);
+  proveedorActual.current = formulario.idProveedor;
+  const alResolverNombre = useCallback((nombre: string) => recordarNombre(proveedorActual.current, nombre), [recordarNombre]);
+  const aplicados = aplicado ? aFiltros(aplicado) : null;
 
-  const consultar = useCallback((filtros: CxpRetencionesFiltros) => {
+  const consultar = useCallback((siguiente: Formulario) => {
     setCargando(true);
     setError(null);
+    const filtros = aFiltros(siguiente);
     retencionesApi.consultar(filtros)
       .then(resultado => {
-        setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1);
-        setParams(parametrosPeriodo({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }), { replace: true });
+        setReporte(resultado); setAplicado(siguiente); setFoco(null); setPagina(1);
+        setParamsRef.current(parametrosReporte({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }, {
+          proveedor: siguiente.idProveedor, tributo: filtros.codigoTributo, moneda: filtros.moneda, constancia: filtros.numeroConstancia,
+        }), { replace: true });
       })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, [setParams]);
+  }, []);
 
-  useEffect(() => { consultar(periodoInicial); }, [consultar, periodoInicial]);
+  useEffect(() => { consultar(inicial); }, [consultar, inicial]);
 
-  const enviar = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!formulario.fechaInicio || !formulario.fechaFin) { setError('Indica el período a consultar.'); return; }
-    if (formulario.fechaInicio > formulario.fechaFin) { setError('La fecha inicial no puede ser posterior a la final.'); return; }
-    consultar({
-      fechaInicio: formulario.fechaInicio, fechaFin: formulario.fechaFin,
-      idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
-      codigoTributo: formulario.codigoTributo.trim() || undefined,
-      moneda: formulario.moneda.trim().toUpperCase() || undefined,
-      numeroConstancia: formulario.numeroConstancia.trim() || undefined,
-    });
+  const aplicar = (siguiente: Formulario) => {
+    setFormulario(siguiente);
+    setValidar(true);
+    const errores = erroresPeriodo(siguiente);
+    if (errores.desde || errores.hasta) return;
+    consultar(siguiente);
   };
+  const quitar = (campos: Partial<Formulario>) => {
+    if (!aplicado) return;
+    setFormulario(actual => ({ ...actual, ...campos }));
+    consultar({ ...aplicado, ...campos });
+  };
+
+  // Primero el nombre que devuelve el reporte; la etiqueta del selector incluye id y NIT.
+  const nombreProveedor = (id: string) => reporte?.resumenPorProveedor.find(item => String(item.idProveedor) === id)?.nombreProveedor
+    ?? nombres[id] ?? `Proveedor #${id}`;
+  const chips: ChipFiltro[] = !aplicado ? [] : [
+    aplicado.idProveedor && { clave: 'proveedor', etiqueta: 'Proveedor', valor: nombreProveedor(aplicado.idProveedor), onQuitar: () => quitar({ idProveedor: '' }) },
+    aplicado.moneda && { clave: 'moneda', etiqueta: 'Moneda', valor: aplicado.moneda, onQuitar: () => quitar({ moneda: '' }) },
+    aplicado.codigoTributo.trim() && { clave: 'tributo', etiqueta: 'Tributo', valor: aplicado.codigoTributo.trim(), onQuitar: () => quitar({ codigoTributo: '' }) },
+    aplicado.numeroConstancia.trim() && { clave: 'constancia', etiqueta: 'Constancia', valor: aplicado.numeroConstancia.trim(), onQuitar: () => quitar({ numeroConstancia: '' }) },
+  ].filter((chip): chip is ChipFiltro => Boolean(chip));
+  const pendientes = aplicado !== null && clave(formulario) !== clave(aplicado);
+  const erroresFecha = validar ? erroresPeriodo(formulario) : { desde: null, hasta: null };
 
   const exportar = (formato: FormatoExportacion) => {
     if (!aplicados) return;
@@ -107,21 +159,27 @@ export function CxpRetencionesPage() {
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
       </ReportesEncabezado>
 
-      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)] xl:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(6rem,9rem)_minmax(4.5rem,6rem)_minmax(7rem,10rem)_auto] lg:items-end">
-        <TextInput id="ret-inicio" type="date" label="Desde" required value={formulario.fechaInicio}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaInicio: event.target.value })} />
-        <TextInput id="ret-fin" type="date" label="Hasta" required value={formulario.fechaFin}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaFin: event.target.value })} />
-        <RelationSelect id="ret-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
-          value={formulario.idProveedor} onChange={value => setFormulario({ ...formulario, idProveedor: value })} />
-        <TextInput id="ret-tributo" label="Código de tributo" placeholder="Todos" maxLength={30} value={formulario.codigoTributo}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, codigoTributo: event.target.value })} />
-        <TextInput id="ret-moneda" label="Moneda" placeholder="Todas" maxLength={3} value={formulario.moneda}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, moneda: event.target.value.toUpperCase() })} />
-        <TextInput id="ret-constancia" label="Constancia" placeholder="Número" maxLength={50} value={formulario.numeroConstancia}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, numeroConstancia: event.target.value })} />
-        <Button type="submit" icon={Search} disabled={cargando}>{cargando ? 'Consultando…' : 'Consultar'}</Button>
-      </form>
+      <PanelFiltros cargando={cargando} pendientes={pendientes} chips={chips}
+        errorValidacion={erroresFecha.desde ?? erroresFecha.hasta}
+        onSubmit={() => aplicar(formulario)} onLimpiar={() => quitar(SIN_FILTROS)}
+        atajos={<AtajosPeriodo periodo={formulario} cargando={cargando} onElegir={elegido => aplicar({ ...formulario, ...elegido })} />}>
+        <CamposPeriodo prefijo="ret" periodo={formulario} mostrarErrores={validar}
+          onCambiar={cambio => setFormulario({ ...formulario, ...cambio })} />
+        <div className="sm:col-span-2 lg:col-span-4">
+          <RelationSelect id="ret-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
+            value={formulario.idProveedor} onLabelChange={alResolverNombre}
+            onChange={(value, etiqueta) => { setFormulario({ ...formulario, idProveedor: value }); recordarNombre(value, etiqueta); }} />
+        </div>
+        <SelectorMoneda id="ret-moneda" value={formulario.moneda} onChange={moneda => setFormulario({ ...formulario, moneda })} />
+        <div className="lg:col-span-2">
+          <TextInput id="ret-tributo" label="Código de tributo" placeholder="Todos" maxLength={30} value={formulario.codigoTributo}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, codigoTributo: event.target.value })} />
+        </div>
+        <div className="lg:col-span-3">
+          <TextInput id="ret-constancia" label="Número de constancia" placeholder="Cualquiera" maxLength={50} value={formulario.numeroConstancia}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, numeroConstancia: event.target.value })} />
+        </div>
+      </PanelFiltros>
 
       {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</p>}
 

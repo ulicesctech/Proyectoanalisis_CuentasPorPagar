@@ -7,6 +7,8 @@ import { CxpTopBar } from './components/CxpTopBar';
 import { CxpBackToMenu } from './components/CxpBackToMenu';
 import { CxpSidebar } from './components/CxpSidebar';
 import { X } from 'lucide-react';
+import { useOperador } from './operador/operador';
+import { registrarVisita } from './navegacion/recientes';
 import './cxp.css';
 const SHOW_SECTION_NAVIGATION = false;
 
@@ -60,6 +62,9 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
   },[mobileMenu]);
   const { pathname } = useLocation();
   const mainPage = !!(resource || screen) && [ `/cxp/${resource ?? screen}`, `/cxp/${resource}/registros` ].includes(pathname);
+  const { actorId } = useOperador();
+  // Alimenta "Continuar donde lo dejaste" del inicio y el buscador de pantallas.
+  useEffect(() => { registrarVisita(actorId, pathname); }, [actorId, pathname]);
   const active = bandeja ?? resource ?? screen;
   const group = resource ? getCxpEntity(resource)!.group : screen ? CXP_SCREENS.find(item => item.path === screen)!.group : undefined;
   const navigation = !group || HOME_GROUPS.includes(group) ? [] : group === 'Pagos'

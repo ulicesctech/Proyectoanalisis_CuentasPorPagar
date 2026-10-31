@@ -1,36 +1,60 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
 import { Menu, Search } from 'lucide-react';
-import { CXP_HOME_SECTIONS } from '../home/cxpHome.config';
+import { CxpCommandPalette } from './CxpCommandPalette';
+import { CxpUserMenu } from './CxpUserMenu';
+
+/** No abrir el buscador con "/" mientras se escribe en un campo. */
+function escribiendo(destino: EventTarget | null): boolean {
+  if (!(destino instanceof HTMLElement)) return false;
+  return destino.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(destino.tagName);
+}
 
 /**
- * Buscador y acceso al menú móvil. La identidad y el logout viven en el pie del menú.
+ * Barra superior de CXP: buscador de pantallas (⌘K / Ctrl+K o "/") y menú de la cuenta.
+ * En Procesos de pago también muestra la búsqueda de solicitudes de esa pantalla.
  */
 export function CxpTopBar({ searchQuery, onSearchChange, onOpenMenu }: {
   searchQuery?: string; onSearchChange?: (value: string) => void;
   onOpenMenu: () => void;
 }) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const results = CXP_HOME_SECTIONS.flatMap(section => section.cards).filter(card =>
-    normalize(`${card.title} ${card.description}`).includes(normalize(query.trim())));
-  const label = onSearchChange ? 'Buscar solicitud' : 'Buscar pantalla';
-  return <div className="cxp-topbar h-12 shrink-0 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-end gap-3">
-    <button type="button" className="cxp-menu-toggle rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Abrir menú" aria-label="Abrir menú" onClick={onOpenMenu}><Menu size={20} /></button>
-    <div className="relative flex items-center min-w-0 flex-1 sm:flex-none"
-      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}>
-      <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" aria-hidden="true" />
-      <input type="search" aria-label={label} placeholder={`${label}...`} value={onSearchChange ? searchQuery ?? '' : query}
-        onFocus={() => setOpen(true)} onKeyDown={event => { if (event.key === 'Escape') setOpen(false); }}
-        onChange={event => { if (onSearchChange) onSearchChange(event.target.value); else { setQuery(event.target.value); setOpen(true); } }}
-        className="h-8 w-full sm:w-64 pl-9 pr-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all duration-150" />
-      {!onSearchChange && open && query.trim() && <nav aria-label="Resultados de búsqueda de pantallas"
-        className="absolute left-0 right-0 top-full z-40 mt-2 max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-        {results.length ? results.map(card => <Link key={card.path} to={card.path} onClick={() => { setQuery(''); setOpen(false); }}
-          className="block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 focus:bg-blue-50">{card.title}</Link>)
-          : <p role="status" className="p-2 text-sm text-slate-500">No se encontraron pantallas.</p>}
-      </nav>}
+  const [buscadorAbierto, setBuscadorAbierto] = useState(false);
+  const atajo = useMemo(() => (/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'), []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setBuscadorAbierto(true);
+      } else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !escribiendo(event.target)) {
+        event.preventDefault();
+        setBuscadorAbierto(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const abrirBuscador = <button type="button" onClick={() => setBuscadorAbierto(true)} aria-haspopup="dialog"
+    aria-keyshortcuts="Meta+K Control+K /" aria-label={`Buscar pantallas (${atajo})`}
+    className={`group flex h-10 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 transition-colors duration-150 hover:border-slate-300 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${onSearchChange ? 'shrink-0' : 'w-full max-w-md'}`}>
+    <Search size={16} aria-hidden="true" className="shrink-0 text-slate-400 transition-colors group-hover:text-slate-600" />
+    <span className={`flex-1 truncate text-left ${onSearchChange ? 'hidden lg:block' : ''}`}>Buscar pantallas…</span>
+    <kbd aria-hidden="true" className="hidden rounded border border-slate-200 bg-white px-1.5 py-0.5 font-sans text-[11px] font-medium text-slate-500 sm:block">{atajo}</kbd>
+  </button>;
+
+  return <header className="cxp-topbar flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+    <button type="button" className="cxp-menu-toggle shrink-0 rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Abrir menú" aria-label="Abrir menú" onClick={onOpenMenu}><Menu size={20} /></button>
+    {abrirBuscador}
+    {onSearchChange && <div className="relative flex min-w-0 max-w-sm flex-1 items-center">
+      <Search size={15} className="pointer-events-none absolute left-3 text-slate-400" aria-hidden="true" />
+      <input type="search" aria-label="Buscar solicitud" placeholder="Buscar solicitud…" value={searchQuery ?? ''}
+        onChange={event => onSearchChange(event.target.value)}
+        className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-800 placeholder-slate-400 transition-colors duration-150 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+    </div>}
+    <div className="ml-auto flex items-center">
+      <CxpUserMenu />
     </div>
-  </div>;
+    <CxpCommandPalette open={buscadorAbierto} onClose={() => setBuscadorAbierto(false)} />
+  </header>;
 }

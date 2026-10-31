@@ -1,7 +1,7 @@
 import type {
   CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpAntiguedadRespuesta, CxpRangoAntiguedad,
   CxpRetencionesFiltros, CxpRetencionesReporte, CxpRetencionesRespuesta,
-  CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta, CxpParametro,
+  CxpEstadisticaFiltros, CxpEstadisticaReporte, CxpEstadisticaRespuesta, CxpParametro, CxpDocumentoMonedas,
 } from '@erp/contracts';
 import { apiClient, buildQueryString } from '../api';
 
@@ -140,6 +140,74 @@ export function leerPeriodo(params: URLSearchParams): Periodo {
 }
 
 export const parametrosPeriodo = (periodo: Periodo) => new URLSearchParams({ desde: periodo.fechaInicio, hasta: periodo.fechaFin });
+
+/** Período y filtros de un reporte en la URL; los filtros vacíos no se escriben. */
+export function parametrosReporte(periodo: Periodo, filtros: Record<string, string | undefined> = {}) {
+  const params = parametrosPeriodo(periodo);
+  for (const [clave, valor] of Object.entries(filtros)) if (valor) params.set(clave, valor);
+  return params;
+}
+
+/** Filtro leído de la URL: si no cumple el formato esperado se ignora. */
+export const filtroUrl = (params: URLSearchParams, clave: string, formato: RegExp) => {
+  const valor = params.get(clave)?.trim() ?? '';
+  return formato.test(valor) ? valor : '';
+};
+export const FORMATO_ID = /^[1-9]\d{0,9}$/;
+export const FORMATO_MONEDA = /^[A-Z]{3}$/;
+export const formatoTexto = (maximo: number) => new RegExp(`^.{1,${maximo}}$`);
+
+const dosDigitos = (numero: number) => String(numero).padStart(2, '0');
+/** Último día del mes (mes de 1 a 12). */
+const ultimoDia = (anio: number, mes: number) => new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+const mesDesplazado = (anio: number, mes: number, delta: number) => {
+  const indice = anio * 12 + (mes - 1) + delta;
+  return { anio: Math.floor(indice / 12), mes: (indice % 12) + 1 };
+};
+
+export interface AtajoPeriodo { clave: string; etiqueta: string; periodo: Periodo }
+
+/** Períodos frecuentes, calculados con la fecha de Guatemala y sin pasar de hoy. */
+export function atajosPeriodo(hoy = hoyGuatemala()): AtajoPeriodo[] {
+  const anio = Number(hoy.slice(0, 4));
+  const mes = Number(hoy.slice(5, 7));
+  const anterior = mesDesplazado(anio, mes, -1);
+  const hace3 = mesDesplazado(anio, mes, -2);
+  return [
+    { clave: 'mes', etiqueta: 'Este mes', periodo: { fechaInicio: `${anio}-${dosDigitos(mes)}-01`, fechaFin: hoy } },
+    { clave: 'mes-anterior', etiqueta: 'Mes anterior', periodo: {
+      fechaInicio: `${anterior.anio}-${dosDigitos(anterior.mes)}-01`,
+      fechaFin: `${anterior.anio}-${dosDigitos(anterior.mes)}-${dosDigitos(ultimoDia(anterior.anio, anterior.mes))}`,
+    } },
+    { clave: 'tres-meses', etiqueta: 'Últimos 3 meses', periodo: { fechaInicio: `${hace3.anio}-${dosDigitos(hace3.mes)}-01`, fechaFin: hoy } },
+    { clave: 'anio', etiqueta: 'Este año', periodo: { fechaInicio: `${anio}-01-01`, fechaFin: hoy } },
+    { clave: 'anio-anterior', etiqueta: 'Año anterior', periodo: { fechaInicio: `${anio - 1}-01-01`, fechaFin: `${anio - 1}-12-31` } },
+  ];
+}
+
+export interface AtajoCorte { clave: string; etiqueta: string; fecha: string }
+
+/** Fechas de corte frecuentes para la antigüedad de saldos. */
+export function atajosCorte(hoy = hoyGuatemala()): AtajoCorte[] {
+  const anio = Number(hoy.slice(0, 4));
+  const anterior = mesDesplazado(anio, Number(hoy.slice(5, 7)), -1);
+  return [
+    { clave: 'hoy', etiqueta: 'Hoy', fecha: hoy },
+    { clave: 'cierre-mes', etiqueta: 'Cierre del mes anterior',
+      fecha: `${anterior.anio}-${dosDigitos(anterior.mes)}-${dosDigitos(ultimoDia(anterior.anio, anterior.mes))}` },
+    { clave: 'cierre-anio', etiqueta: 'Cierre del año anterior', fecha: `${anio - 1}-12-31` },
+  ];
+}
+
+let monedas: Promise<CxpDocumentoMonedas['monedas']> | null = null;
+
+/** Monedas del catálogo del ERP (la misma lista del registro de documentos); se pide una sola vez. */
+export function catalogoMonedas(): Promise<CxpDocumentoMonedas['monedas']> {
+  monedas ??= apiClient.get<CxpDocumentoMonedas>('/cxp/documentos/monedas')
+    .then(respuesta => respuesta.monedas)
+    .catch(error => { monedas = null; throw error; });
+  return monedas;
+}
 
 /** Valida un período escrito por el usuario; devuelve el mensaje de error o null. */
 export function errorPeriodo(periodo: Periodo): string | null {
