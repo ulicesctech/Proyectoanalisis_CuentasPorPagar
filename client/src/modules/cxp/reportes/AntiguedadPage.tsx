@@ -1,14 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { CxpAntiguedadFiltros, CxpAntiguedadReporte, CxpRangoAntiguedad } from '@erp/contracts';
 import { Button, Select, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
-import { RANGOS, RANGO_COLOR, RANGO_ETIQUETA, antiguedadApi, hoyGuatemala, leerPeriodo, parametrosPeriodo } from './api';
+import {
+  FORMATO_ID, FORMATO_MONEDA, RANGOS, RANGO_COLOR, RANGO_ETIQUETA, antiguedadApi, filtroUrl, hoyGuatemala, leerPeriodo,
+  parametrosReporte,
+} from './api';
+import { AtajosCorte, PanelFiltros, SelectorMoneda, useNombresProveedor, type ChipFiltro } from './components/FiltrosReporte';
 import { BotonesExportar } from './components/ReporteComponentes';
 import { ReportesEncabezado } from './components/ReportesEncabezado';
+
+type Formulario = { fechaCorte: string; idProveedor: string; moneda: string; rango: string };
+const SIN_FILTROS = { idProveedor: '', moneda: '', rango: '' };
+
+/** Filtros desde la URL: "hasta" es la fecha de corte; un valor inválido se ignora. */
+function leerFormulario(params: URLSearchParams): Formulario {
+  const rango = params.get('rango') ?? '';
+  return {
+    fechaCorte: leerPeriodo(params).fechaFin,
+    idProveedor: filtroUrl(params, 'proveedor', FORMATO_ID),
+    moneda: filtroUrl(params, 'moneda', FORMATO_MONEDA),
+    rango: (RANGOS as string[]).includes(rango) ? rango : '',
+  };
+}
+
+const aFiltros = (formulario: Formulario): CxpAntiguedadFiltros => ({
+  fechaCorte: formulario.fechaCorte,
+  idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
+  moneda: formulario.moneda.trim().toUpperCase() || undefined,
+  rangoAntiguedad: (formulario.rango || undefined) as CxpRangoAntiguedad | undefined,
+});
+const clave = (formulario: Formulario) => JSON.stringify(aFiltros(formulario));
+const errorCorte = (fecha: string) => !fecha ? 'Indica la fecha de corte.' : fecha > hoyGuatemala() ? 'No puede ser posterior a hoy.' : null;
 
 const RANKING_VISIBLE = 10;
 const POR_PAGINA = 20;
@@ -22,45 +49,71 @@ const porcentaje = (parte: number, total: number) => total > 0 ? Math.round((par
 export function CxpAntiguedadPage() {
   // El período compartido de reportes llega en la URL; aquí "hasta" es la fecha de corte.
   const [params, setParams] = useSearchParams();
+  // setParams cambia de identidad con cada URL: se usa por referencia para no repetir la consulta inicial.
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
   const busquedaUrl = params.toString();
   const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
-  const [corteInicial] = useState(periodo.fechaFin);
-  const [formulario, setFormulario] = useState({ fechaCorte: corteInicial, idProveedor: '', moneda: '', rango: '' });
-  const [aplicados, setAplicados] = useState<CxpAntiguedadFiltros | null>(null);
+  const [inicial] = useState(() => leerFormulario(new URLSearchParams(busquedaUrl)));
+  const [formulario, setFormulario] = useState<Formulario>(inicial);
+  const [aplicado, setAplicado] = useState<Formulario | null>(null);
+  const [validar, setValidar] = useState(false);
   const [reporte, setReporte] = useState<CxpAntiguedadReporte | null>(null);
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [foco, setFoco] = useState<Foco | null>(null);
   const [pagina, setPagina] = useState(1);
+  const [nombres, recordarNombre] = useNombresProveedor();
+  const proveedorActual = useRef(formulario.idProveedor);
+  proveedorActual.current = formulario.idProveedor;
+  const alResolverNombre = useCallback((nombre: string) => recordarNombre(proveedorActual.current, nombre), [recordarNombre]);
+  const aplicados = aplicado ? aFiltros(aplicado) : null;
 
-  const consultar = useCallback((filtros: CxpAntiguedadFiltros) => {
+  const consultar = useCallback((siguiente: Formulario) => {
     setCargando(true);
     setError(null);
+    const filtros = aFiltros(siguiente);
     antiguedadApi.consultar(filtros)
       .then(resultado => {
-        setReporte(resultado); setAplicados(filtros); setFoco(null); setPagina(1);
-        setParams(previos => {
+        setReporte(resultado); setAplicado(siguiente); setFoco(null); setPagina(1);
+        setParamsRef.current(previos => {
           const actual = leerPeriodo(previos);
-          return parametrosPeriodo({ fechaInicio: actual.fechaInicio <= filtros.fechaCorte ? actual.fechaInicio : filtros.fechaCorte, fechaFin: filtros.fechaCorte });
+          return parametrosReporte(
+            { fechaInicio: actual.fechaInicio <= filtros.fechaCorte ? actual.fechaInicio : filtros.fechaCorte, fechaFin: filtros.fechaCorte },
+            { proveedor: siguiente.idProveedor, moneda: filtros.moneda, rango: siguiente.rango });
         }, { replace: true });
       })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, [setParams]);
+  }, []);
 
-  useEffect(() => { consultar({ fechaCorte: corteInicial }); }, [consultar, corteInicial]);
+  useEffect(() => { consultar(inicial); }, [consultar, inicial]);
 
-  const enviar = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!formulario.fechaCorte) { setError('Indica la fecha de corte.'); return; }
-    consultar({
-      fechaCorte: formulario.fechaCorte,
-      idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
-      moneda: formulario.moneda.trim().toUpperCase() || undefined,
-      rangoAntiguedad: (formulario.rango || undefined) as CxpRangoAntiguedad | undefined,
-    });
+  /** Aplica el formulario indicado; si la fecha no es válida, muestra el error junto al campo. */
+  const aplicar = (siguiente: Formulario) => {
+    setFormulario(siguiente);
+    setValidar(true);
+    if (errorCorte(siguiente.fechaCorte)) return;
+    consultar(siguiente);
   };
+  /** Quita filtros ya aplicados sin perder otros cambios del formulario que aún no se aplican. */
+  const quitar = (campos: Partial<Formulario>) => {
+    if (!aplicado) return;
+    setFormulario(actual => ({ ...actual, ...campos }));
+    consultar({ ...aplicado, ...campos });
+  };
+
+  // Primero el nombre que devuelve el reporte; la etiqueta del selector incluye id y NIT.
+  const nombreProveedor = (id: string) => reporte?.rankingProveedores.find(item => String(item.idProveedor) === id)?.nombreProveedor
+    ?? nombres[id] ?? `Proveedor #${id}`;
+  const chips: ChipFiltro[] = !aplicado ? [] : [
+    aplicado.idProveedor && { clave: 'proveedor', etiqueta: 'Proveedor', valor: nombreProveedor(aplicado.idProveedor), onQuitar: () => quitar({ idProveedor: '' }) },
+    aplicado.moneda && { clave: 'moneda', etiqueta: 'Moneda', valor: aplicado.moneda, onQuitar: () => quitar({ moneda: '' }) },
+    aplicado.rango && { clave: 'rango', etiqueta: 'Rango', valor: RANGO_ETIQUETA[aplicado.rango as CxpRangoAntiguedad], onQuitar: () => quitar({ rango: '' }) },
+  ].filter((chip): chip is ChipFiltro => Boolean(chip));
+  const pendientes = aplicado !== null && clave(formulario) !== clave(aplicado);
+  const errorFecha = validar ? errorCorte(formulario.fechaCorte) : null;
 
   const exportar = (formato: 'excel' | 'pdf') => {
     if (!aplicados) return;
@@ -92,18 +145,26 @@ export function CxpAntiguedadPage() {
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
       </ReportesEncabezado>
 
-      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(4.5rem,7rem)_minmax(8rem,12rem)_auto] lg:items-end">
-        <TextInput id="ant-corte" type="date" label="Fecha de corte" required value={formulario.fechaCorte} max={hoyGuatemala()}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaCorte: event.target.value })} />
-        <RelationSelect id="ant-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
-          value={formulario.idProveedor} onChange={value => setFormulario({ ...formulario, idProveedor: value })} />
-        <TextInput id="ant-moneda" label="Moneda" placeholder="Todas" maxLength={3} value={formulario.moneda}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, moneda: event.target.value.toUpperCase() })} />
-        <Select id="ant-rango" label="Rango" value={formulario.rango} placeholder=""
-          options={[{ value: '', label: 'Todos' }, ...RANGOS.map(rango => ({ value: rango, label: RANGO_ETIQUETA[rango] }))]}
-          onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setFormulario({ ...formulario, rango: event.target.value })} />
-        <Button type="submit" icon={Search} disabled={cargando}>{cargando ? 'Consultando…' : 'Consultar'}</Button>
-      </form>
+      <PanelFiltros cargando={cargando} pendientes={pendientes} chips={chips} errorValidacion={errorFecha}
+        onSubmit={() => aplicar(formulario)} onLimpiar={() => quitar(SIN_FILTROS)}
+        atajos={<AtajosCorte fecha={formulario.fechaCorte} cargando={cargando} onElegir={fecha => aplicar({ ...formulario, fechaCorte: fecha })} />}>
+        <div className="lg:col-span-3">
+          <TextInput id="ant-corte" type="date" label="Fecha de corte" required value={formulario.fechaCorte} max={hoyGuatemala()}
+            error={errorFecha ?? undefined} aria-invalid={errorFecha ? true : undefined}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaCorte: event.target.value })} />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-5">
+          <RelationSelect id="ant-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
+            value={formulario.idProveedor} onLabelChange={alResolverNombre}
+            onChange={(value, etiqueta) => { setFormulario({ ...formulario, idProveedor: value }); recordarNombre(value, etiqueta); }} />
+        </div>
+        <SelectorMoneda id="ant-moneda" value={formulario.moneda} onChange={moneda => setFormulario({ ...formulario, moneda })} />
+        <div className="lg:col-span-2">
+          <Select id="ant-rango" label="Rango" value={formulario.rango} placeholder=""
+            options={[{ value: '', label: 'Todos los rangos' }, ...RANGOS.map(rango => ({ value: rango, label: RANGO_ETIQUETA[rango] }))]}
+            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setFormulario({ ...formulario, rango: event.target.value })} />
+        </div>
+      </PanelFiltros>
 
       {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</p>}
 

@@ -1,14 +1,40 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, TrendingDown, TrendingUp } from 'lucide-react';
+import { TrendingDown, TrendingUp } from 'lucide-react';
 import type { CxpEstadisticaFiltros, CxpEstadisticaReporte } from '@erp/contracts';
-import { Button, TextInput } from '../../../shared/ui-kit';
+import { TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { RelationSelect } from '../components/RelationSelect';
 import { errorDe, formatoFecha } from '../facturas-especiales/api';
-import { MONEDA_LOCAL, estadisticaApi, formatoLocal, serieColor, type FormatoExportacion, leerPeriodo, parametrosPeriodo } from './api';
+import {
+  FORMATO_ID, FORMATO_MONEDA, MONEDA_LOCAL, estadisticaApi, filtroUrl, formatoLocal, formatoTexto, serieColor,
+  type FormatoExportacion, leerPeriodo, parametrosReporte,
+} from './api';
 import { ReportesEncabezado } from './components/ReportesEncabezado';
 import { BotonesExportar, TendenciaMensual } from './components/ReporteComponentes';
+import {
+  AtajosPeriodo, CamposPeriodo, PanelFiltros, SelectorMoneda, erroresPeriodo, useNombresProveedor, type ChipFiltro,
+} from './components/FiltrosReporte';
+
+type Formulario = { fechaInicio: string; fechaFin: string; idProveedor: string; moneda: string; centroCosto: string };
+const SIN_FILTROS = { idProveedor: '', moneda: '', centroCosto: '' };
+
+function leerFormulario(params: URLSearchParams): Formulario {
+  return {
+    ...leerPeriodo(params),
+    idProveedor: filtroUrl(params, 'proveedor', FORMATO_ID),
+    moneda: filtroUrl(params, 'moneda', FORMATO_MONEDA),
+    centroCosto: filtroUrl(params, 'centro', formatoTexto(30)),
+  };
+}
+
+const aFiltros = (formulario: Formulario): CxpEstadisticaFiltros => ({
+  fechaInicio: formulario.fechaInicio, fechaFin: formulario.fechaFin,
+  idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
+  moneda: formulario.moneda.trim().toUpperCase() || undefined,
+  centroCosto: formulario.centroCosto.trim() || undefined,
+});
+const clave = (formulario: Formulario) => JSON.stringify(aFiltros(formulario));
 
 const PROVEEDORES_VISIBLES = 10;
 const SERIE_COMPRAS = [{ clave: 'compras', etiqueta: 'Compras' }];
@@ -20,41 +46,65 @@ const proveedorTexto = (id: number | null, nombre: string | null) => nombre ?? (
 export function CxpEstadisticaPage() {
   // Período compartido de reportes (?desde=&hasta=); se actualiza al consultar.
   const [params, setParams] = useSearchParams();
+  // setParams cambia de identidad con cada URL: se usa por referencia para no repetir la consulta inicial.
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
   const busquedaUrl = params.toString();
   const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busquedaUrl)), [busquedaUrl]);
-  const [periodoInicial] = useState(periodo);
-  const [formulario, setFormulario] = useState({ fechaInicio: periodoInicial.fechaInicio, fechaFin: periodoInicial.fechaFin, idProveedor: '', moneda: '', centroCosto: '' });
-  const [aplicados, setAplicados] = useState<CxpEstadisticaFiltros | null>(null);
+  const [inicial] = useState(() => leerFormulario(new URLSearchParams(busquedaUrl)));
+  const [formulario, setFormulario] = useState<Formulario>(inicial);
+  const [aplicado, setAplicado] = useState<Formulario | null>(null);
+  const [validar, setValidar] = useState(false);
   const [reporte, setReporte] = useState<CxpEstadisticaReporte | null>(null);
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState<FormatoExportacion | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nombres, recordarNombre] = useNombresProveedor();
+  const proveedorActual = useRef(formulario.idProveedor);
+  proveedorActual.current = formulario.idProveedor;
+  const alResolverNombre = useCallback((nombre: string) => recordarNombre(proveedorActual.current, nombre), [recordarNombre]);
+  const aplicados = aplicado ? aFiltros(aplicado) : null;
 
-  const consultar = useCallback((filtros: CxpEstadisticaFiltros) => {
+  const consultar = useCallback((siguiente: Formulario) => {
     setCargando(true);
     setError(null);
+    const filtros = aFiltros(siguiente);
     estadisticaApi.consultar(filtros)
       .then(resultado => {
-        setReporte(resultado); setAplicados(filtros);
-        setParams(parametrosPeriodo({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }), { replace: true });
+        setReporte(resultado); setAplicado(siguiente);
+        setParamsRef.current(parametrosReporte({ fechaInicio: filtros.fechaInicio, fechaFin: filtros.fechaFin }, {
+          proveedor: siguiente.idProveedor, moneda: filtros.moneda, centro: filtros.centroCosto,
+        }), { replace: true });
       })
       .catch(reason => setError(errorDe(reason).mensaje))
       .finally(() => setCargando(false));
-  }, [setParams]);
+  }, []);
 
-  useEffect(() => { consultar(periodoInicial); }, [consultar, periodoInicial]);
+  useEffect(() => { consultar(inicial); }, [consultar, inicial]);
 
-  const enviar = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!formulario.fechaInicio || !formulario.fechaFin) { setError('Indica el período a consultar.'); return; }
-    if (formulario.fechaInicio > formulario.fechaFin) { setError('La fecha inicial no puede ser posterior a la final.'); return; }
-    consultar({
-      fechaInicio: formulario.fechaInicio, fechaFin: formulario.fechaFin,
-      idProveedor: formulario.idProveedor ? Number(formulario.idProveedor) : undefined,
-      moneda: formulario.moneda.trim().toUpperCase() || undefined,
-      centroCosto: formulario.centroCosto.trim() || undefined,
-    });
+  const aplicar = (siguiente: Formulario) => {
+    setFormulario(siguiente);
+    setValidar(true);
+    const errores = erroresPeriodo(siguiente);
+    if (errores.desde || errores.hasta) return;
+    consultar(siguiente);
   };
+  const quitar = (campos: Partial<Formulario>) => {
+    if (!aplicado) return;
+    setFormulario(actual => ({ ...actual, ...campos }));
+    consultar({ ...aplicado, ...campos });
+  };
+
+  // Primero el nombre que devuelve el reporte; la etiqueta del selector incluye id y NIT.
+  const nombreProveedor = (id: string) => reporte?.resumen.porProveedor.find(item => String(item.idProveedor) === id)?.nombreProveedor
+    ?? nombres[id] ?? `Proveedor #${id}`;
+  const chips: ChipFiltro[] = !aplicado ? [] : [
+    aplicado.idProveedor && { clave: 'proveedor', etiqueta: 'Proveedor', valor: nombreProveedor(aplicado.idProveedor), onQuitar: () => quitar({ idProveedor: '' }) },
+    aplicado.moneda && { clave: 'moneda', etiqueta: 'Moneda', valor: aplicado.moneda, onQuitar: () => quitar({ moneda: '' }) },
+    aplicado.centroCosto.trim() && { clave: 'centro', etiqueta: 'Centro de costo', valor: aplicado.centroCosto.trim(), onQuitar: () => quitar({ centroCosto: '' }) },
+  ].filter((chip): chip is ChipFiltro => Boolean(chip));
+  const pendientes = aplicado !== null && clave(formulario) !== clave(aplicado);
+  const erroresFecha = validar ? erroresPeriodo(formulario) : { desde: null, hasta: null };
 
   const exportar = (formato: FormatoExportacion) => {
     if (!aplicados) return;
@@ -79,19 +129,23 @@ export function CxpEstadisticaPage() {
         <BotonesExportar disponible={!!reporte} exportando={exportando} onExportar={exportar} />
       </ReportesEncabezado>
 
-      <form onSubmit={enviar} className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,10rem)_minmax(8.5rem,10rem)_minmax(10rem,1fr)_minmax(4.5rem,6rem)_minmax(7rem,10rem)_auto] lg:items-end">
-        <TextInput id="est-inicio" type="date" label="Desde" required value={formulario.fechaInicio}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaInicio: event.target.value })} />
-        <TextInput id="est-fin" type="date" label="Hasta" required value={formulario.fechaFin}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaFin: event.target.value })} />
-        <RelationSelect id="est-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
-          value={formulario.idProveedor} onChange={value => setFormulario({ ...formulario, idProveedor: value })} />
-        <TextInput id="est-moneda" label="Moneda" placeholder="Todas" maxLength={3} value={formulario.moneda}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, moneda: event.target.value.toUpperCase() })} />
-        <TextInput id="est-centro" label="Centro de costo" placeholder="Todos" maxLength={30} value={formulario.centroCosto}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, centroCosto: event.target.value })} />
-        <Button type="submit" icon={Search} disabled={cargando}>{cargando ? 'Consultando…' : 'Consultar'}</Button>
-      </form>
+      <PanelFiltros cargando={cargando} pendientes={pendientes} chips={chips}
+        errorValidacion={erroresFecha.desde ?? erroresFecha.hasta}
+        onSubmit={() => aplicar(formulario)} onLimpiar={() => quitar(SIN_FILTROS)}
+        atajos={<AtajosPeriodo periodo={formulario} cargando={cargando} onElegir={elegido => aplicar({ ...formulario, ...elegido })} />}>
+        <CamposPeriodo prefijo="est" periodo={formulario} mostrarErrores={validar}
+          onCambiar={cambio => setFormulario({ ...formulario, ...cambio })} />
+        <div className="sm:col-span-2 lg:col-span-4">
+          <RelationSelect id="est-proveedor" catalog="proveedores" label="Proveedor" placeholder="Todos los proveedores" allowCreate={false}
+            value={formulario.idProveedor} onLabelChange={alResolverNombre}
+            onChange={(value, etiqueta) => { setFormulario({ ...formulario, idProveedor: value }); recordarNombre(value, etiqueta); }} />
+        </div>
+        <SelectorMoneda id="est-moneda" value={formulario.moneda} onChange={moneda => setFormulario({ ...formulario, moneda })} />
+        <div className="lg:col-span-2">
+          <TextInput id="est-centro" label="Centro de costo" placeholder="Todos" maxLength={30} value={formulario.centroCosto}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, centroCosto: event.target.value })} />
+        </div>
+      </PanelFiltros>
 
       {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</p>}
       {advertencias.map(texto => <p key={texto} role="status" className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg p-3">{texto}</p>)}
