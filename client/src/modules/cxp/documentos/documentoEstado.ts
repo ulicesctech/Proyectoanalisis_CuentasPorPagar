@@ -4,7 +4,7 @@ import { cxpFormText, type CxpFormScalar } from '../components/cxpFormValues';
 /** El valor local procede del esquema existente, sin depender de un export nuevo precargado por Vite. */
 export function initialDocumentoRegistroValues(actorId?: CxpFormScalar) {
   return {
-    idProveedor: '', idSucursal: '', creadoPor: cxpFormText(actorId), tipoDocumento: 'FACTURA', naturaleza: 'D',
+    idProveedor: '', idSucursal: '', idCompromiso: '', creadoPor: cxpFormText(actorId), tipoDocumento: 'FACTURA', naturaleza: 'D',
     idCondicionCredito: '', origenIngreso: 'FACTURACION_ELECTRONICA', tipoRegistro: 'SIN_OC',
     serie: '', numeroDocumento: '', uuidFiscal: '', nitEmisor: '', hashOrigen: '', noOrdenCompra: '',
     fechaDocumento: '', fechaVencimiento: '', moneda: CXP_SCHEMAS.documentos.create.shape.moneda.parse(undefined),

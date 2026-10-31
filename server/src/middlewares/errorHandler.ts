@@ -36,6 +36,8 @@ export function errorHandler(
     name: err?.name,
     code: err?.code,
     errorNum: err?.errorNum,
+    message: err?.message,
+    stack: err?.stack,
   });
   res.status(500).json({
     error: 'Error interno del servidor'

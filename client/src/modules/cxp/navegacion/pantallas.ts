@@ -3,11 +3,11 @@
 import {
   ArrowLeftRight, Banknote, BadgeCheck, Building2, CalendarClock, CalendarRange, ChartColumnStacked, ClipboardCheck, FilePlus2,
   FileSearch, FileText, Handshake, History, Hourglass, House, Landmark, Layers, ListOrdered, Paperclip, Percent, Receipt,
-  ReceiptText, Scale, Send, ShieldCheck, SlidersHorizontal, Ticket, TrendingUp, type LucideIcon,
+  ReceiptText, Scale, Send, ShieldCheck, SlidersHorizontal, Ticket, TrendingUp, Coins, type LucideIcon,
 } from 'lucide-react';
 
 export type GrupoPantalla =
-  | 'Inicio' | 'Documentos' | 'Facturas especiales' | 'Pagos' | 'Control' | 'Conciliaciones' | 'Reportes' | 'Configuración';
+  | 'Inicio' | 'Documentos' | 'Facturas especiales' | 'Pagos' | 'Caja Chica' | 'Control' | 'Conciliaciones' | 'Reportes' | 'Configuración';
 
 export interface PantallaCxp {
   path: string;
@@ -50,6 +50,8 @@ export const CXP_PANTALLAS: PantallaCxp[] = [
   { path: '/cxp/lotes-pago', title: 'Lotes de pago', group: 'Pagos', icon: Layers, keywords: 'lote' },
   { path: '/cxp/pagos/registros', title: 'Registros de pago', group: 'Pagos', icon: Banknote, keywords: 'historial pagos' },
 
+  { path: '/cxp/caja-chica', title: 'Caja Chica', group: 'Caja Chica', icon: Coins,
+    keywords: 'caja chica fondo gastos reposicion reembolso disponible saldo' },
   { path: '/cxp/reglas-aprobacion', title: 'Reglas de aprobación', group: 'Control', icon: ClipboardCheck,
     keywords: 'niveles aprobador montos' },
   { path: '/cxp/aprobaciones/registros', title: 'Aprobaciones', group: 'Control', icon: BadgeCheck,

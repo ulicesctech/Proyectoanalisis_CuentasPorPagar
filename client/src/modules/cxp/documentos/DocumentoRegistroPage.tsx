@@ -43,10 +43,10 @@ type DueDatePreview = {
 
 function makePayload(values: Values): CxpRecord {
   const { fechaVencimiento: _calculated, ...input } = documentoInput(values, Number(values.creadoPor));
-  return { ...input, noOrdenCompra: values.tipoRegistro === 'CON_OC' ? input.noOrdenCompra : undefined, estado: 'RECIBIDO' };
+  return { ...input, idCompromiso: values.tipoDocumento === 'GASTO_CAJA_CHICA' && values.idCompromiso ? Number(values.idCompromiso) : undefined, noOrdenCompra: values.tipoRegistro === 'CON_OC' ? input.noOrdenCompra : undefined, estado: 'RECIBIDO' };
 }
 
-const identificationFields: Field[] = ['idProveedor', 'idSucursal', 'tipoDocumento', 'naturaleza', 'origenIngreso', 'tipoRegistro',
+const identificationFields: Field[] = ['idProveedor', 'idSucursal', 'idCompromiso', 'tipoDocumento', 'naturaleza', 'origenIngreso', 'tipoRegistro',
   'noOrdenCompra', 'serie', 'numeroDocumento', 'uuidFiscal', 'nitEmisor', 'hashOrigen', 'creadoPor'];
 const fieldsForStep = (step: number): Field[] => step === 0 ? identificationFields
   : (Object.keys(initialValues) as Field[]).filter(name => !identificationFields.includes(name));
@@ -87,6 +87,14 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
   const { discard } = useCxpFormGuard();
   const [dueDate, setDueDate] = useState<DueDatePreview | null>(null);
   const [dueDateLoading, setDueDateLoading] = useState(false);
+  const [fondosCajaChica, setFondosCajaChica] = useState<Array<{ idCompromiso: number; numeroReferencia: string; descripcion: string; saldoCapital: number }>>([]);
+  useEffect(() => {
+    apiClient.get<{ data: Array<{ registro: { idCompromiso: number; numeroReferencia: string; descripcion: string; saldoCapital: number; estado: string } }> }>(
+      '/cxp/administracion/compromisos?tipoCompromiso=FONDO_CAJA_CHICA&limit=50'
+    ).then(res => {
+      setFondosCajaChica((res.data || []).map(r => r.registro).filter(r => r.estado === 'ACTIVO'));
+    }).catch(() => {});
+  }, []);
 
   const close = () => {
     if (savingRef.current) return;
@@ -184,6 +192,9 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
     const found: Errors = Object.fromEntries(Object.entries(allErrors)
       .filter(([name]) => fieldsForStep(step).includes(name as Field)));
     setTouched(current => ({ ...current, ...Object.fromEntries(fieldsForStep(step).map(name => [name, true])) }));
+    if (step === 0 && values.tipoDocumento === 'GASTO_CAJA_CHICA' && !values.idCompromiso) {
+      found.idCompromiso = 'Selecciona el fondo de caja chica.';
+    }
     if (step === 1 && !currencyConfig) found.moneda = currencyLoadError || 'Espera a que se cargue el catálogo de monedas.';
     if (step === 1 && !Object.keys(found).length && !dueDate) {
       found.idCondicionCredito = dueDateLoading
@@ -197,6 +208,9 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
     if (savingRef.current) return;
     const identification: Errors = Object.fromEntries(Object.entries(allErrors)
       .filter(([name]) => fieldsForStep(0).includes(name as Field)));
+    if (values.tipoDocumento === 'GASTO_CAJA_CHICA' && !values.idCompromiso) {
+      identification.idCompromiso = 'Selecciona el fondo de caja chica.';
+    }
     const amounts: Errors = Object.fromEntries(Object.entries(allErrors)
       .filter(([name]) => fieldsForStep(1).includes(name as Field)));
     if (!currencyConfig) amounts.moneda = currencyLoadError || 'No se pudo confirmar el catálogo de monedas.';
@@ -294,6 +308,28 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
               <DocumentoCatalogPicker id="registro-idProveedor" label="Proveedor" catalog="proveedores" value={values.idProveedor} required error={errors.idProveedor} onChange={id=>void identity.choose(id)} />
               <DocumentoCatalogPicker id="registro-idSucursal" label="Sucursal" catalog="sucursales" value={values.idSucursal} required error={errors.idSucursal} onChange={chooseCatalog('idSucursal')} />
               {select('tipoDocumento', 'Tipo de documento', choices('tipoDocumento'), true)}
+              {values.tipoDocumento === 'GASTO_CAJA_CHICA' && (
+                <div className="sm:col-span-2">
+                  <Select
+                    id="registro-idCompromiso"
+                    label="Fondo de Caja Chica"
+                    value={values.idCompromiso}
+                    required
+                    error={errors.idCompromiso}
+                    onChange={event => change('idCompromiso', event.target.value)}
+                    options={[
+                      { value: '', label: 'Seleccionar fondo de caja chica…' },
+                      ...fondosCajaChica.map(f => ({
+                        value: String(f.idCompromiso),
+                        label: `${f.numeroReferencia || `Fondo #${f.idCompromiso}`} · ${f.descripcion} (Disponible: Q${Number(f.saldoCapital).toFixed(2)})`,
+                      })),
+                    ]}
+                  />
+                  <p className="text-xs text-emerald-700 mt-1">
+                    Al aprobarse este comprobante, el importe se descontará automáticamente del saldo de este fondo.
+                  </p>
+                </div>
+              )}
               {select('naturaleza', 'Naturaleza', [{ value: 'D', label: 'Débito · obligación' }, { value: 'C', label: 'Crédito · a favor' }], true)}
               {select('origenIngreso', 'Origen de ingreso', [{ value: 'FACTURACION_ELECTRONICA', label: 'Facturación electrónica' }, { value: 'MANUAL', label: 'Registro manual' }], true)}
               {select('tipoRegistro', 'Tipo de registro', choices('tipoRegistro'), true)}
@@ -361,6 +397,9 @@ export function CxpDocumentoRegistroDialog({ onClose, onSuccess }: {
               <div><dt className="text-xs font-semibold uppercase text-slate-500">Documento</dt><dd className="font-semibold text-slate-900 mt-1">{values.serie} · {values.numeroDocumento}</dd></div>
               <div><dt className="text-xs font-semibold uppercase text-slate-500">Proveedor</dt><dd className="font-semibold text-slate-900 mt-1">{catalogLabels.idProveedor || `#${values.idProveedor}`}</dd></div>
               <div><dt className="text-xs font-semibold uppercase text-slate-500">Tipo y sucursal</dt><dd className="font-semibold text-slate-900 mt-1">{readableState(values.tipoDocumento)} · {catalogLabels.idSucursal || `#${values.idSucursal}`}</dd></div>
+              {values.tipoDocumento === 'GASTO_CAJA_CHICA' && values.idCompromiso && (
+                <div><dt className="text-xs font-semibold uppercase text-emerald-600">Fondo de Caja Chica</dt><dd className="font-semibold text-emerald-900 mt-1">{fondosCajaChica.find(f => String(f.idCompromiso) === values.idCompromiso)?.numeroReferencia || `#${values.idCompromiso}`}</dd></div>
+              )}
               <div><dt className="text-xs font-semibold uppercase text-slate-500">UUID fiscal</dt><dd className="font-semibold text-slate-900 mt-1 break-all">{values.uuidFiscal || '—'}</dd></div>
               <div><dt className="text-xs font-semibold uppercase text-slate-500">Fecha y vencimiento calculado</dt><dd className="font-semibold text-slate-900 mt-1">{formatDocumentoDate(values.fechaDocumento)} · {formatDocumentoDate(dueDate?.fechaVencimiento)}</dd>
                 <p className="text-xs text-slate-500 mt-1">{catalogLabels.idCondicionCredito || (dueDate?.tipo === 'CONTADO' ? 'Contado' : `${dueDate?.diasCredito ?? 0} días de crédito`)}</p></div>

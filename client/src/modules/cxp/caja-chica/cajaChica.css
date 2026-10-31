@@ -1,0 +1,39 @@
+/* client/src/modules/cxp/caja-chica/cajaChica.css */
+/* Estilos alineados a la paleta estándar de CXP (Slate / Azul / Blanco) */
+
+.cxp-caja-chica-stat {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.caja-chica-tab-btn {
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all 0.15s ease-in-out;
+  border-bottom-width: 2px;
+  margin-bottom: -1px;
+}
+
+.caja-chica-tab-active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background-color: rgba(239, 246, 255, 0.5);
+}
+
+.caja-chica-tab-inactive {
+  border-color: transparent;
+  color: #64748b;
+}
+
+.caja-chica-tab-inactive:hover {
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+

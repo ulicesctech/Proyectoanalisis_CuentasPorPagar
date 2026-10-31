@@ -3,5 +3,6 @@ packages:
   - 'server'
   - 'packages/contracts'
 allowBuilds:
+  argon2: false
   esbuild: true
   oracledb: true
