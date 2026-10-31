@@ -1,0 +1,42 @@
+/* Inicio de CXP: patrón del encabezado, entrada escalonada y elevación al pasar el cursor. */
+.cxp-home-hero-pattern {
+  background-image:
+    radial-gradient(circle at 100% 0%, rgb(37 99 235 / 0.12), transparent 45%),
+    linear-gradient(to right, rgb(148 163 184 / 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 0.14) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+  mask-image: linear-gradient(to left, #000 0%, rgb(0 0 0 / 0.35) 45%, transparent 75%);
+}
+
+.cxp-home-reveal {
+  animation: cxp-home-reveal 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@keyframes cxp-home-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.cxp-home-lift {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.cxp-home-lift:hover { transform: translateY(-2px); }
+
+/* Conector entre pasos del ciclo cuando se muestran en una sola fila. */
+@media (min-width: 1280px) {
+  .cxp-ciclo-paso:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: -0.5rem;
+    width: 0.5rem;
+    height: 1px;
+    background: #cbd5e1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cxp-home-reveal { animation: none; }
+  .cxp-home-lift, .cxp-home-lift:hover { transition: none; transform: none; }
+}

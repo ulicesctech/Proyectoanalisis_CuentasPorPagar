@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { CXP_ENTITIES, getCxpEntity, type BandejaProceso, type CxpResource } from '@erp/contracts';
 import { Select, Sidebar } from '../../shared/ui-kit';
 import { CxpTopBar } from './components/CxpTopBar';
 import { useOperador } from './operador/operador';
+import { registrarVisita } from './navegacion/recientes';
 import './cxp.css';
 const SHOW_SECTION_NAVIGATION = false;
 
@@ -36,7 +37,10 @@ export function CxpLayout({ resource, screen, children, bandeja, searchQuery, on
   searchQuery?: string; onSearchChange?: (value: string) => void;
 }) {
   const navigate = useNavigate();
-  const { actor } = useOperador();
+  const { pathname } = useLocation();
+  const { actor, actorId } = useOperador();
+  // Alimenta "Continuar donde lo dejaste" del inicio y el buscador de pantallas.
+  useEffect(() => { registrarVisita(actorId, pathname); }, [actorId, pathname]);
   // El Sidebar es de solo lectura (components/ui): solo muestra con qué usuario se opera.
   const sidebarUser = actor
     ? { name: actor.nombre, role: actor.nombreRol ?? 'Rol activo', initials: actor.nombre.split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || 'CP' }

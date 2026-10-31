@@ -1,0 +1,14 @@
+/* Apertura del buscador de pantallas y del menú de usuario: breve y sin desplazamientos grandes. */
+.cxp-palette-overlay { animation: cxp-fade-in 140ms ease-out both; }
+.cxp-palette-panel { animation: cxp-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cxp-menu-enter { animation: cxp-pop-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top right; }
+
+@keyframes cxp-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cxp-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cxp-palette-overlay, .cxp-palette-panel, .cxp-menu-enter { animation: none; }
+}

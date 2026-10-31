@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  CalendarClock, CircleCheck, Files, LoaderCircle, RefreshCw, TriangleAlert, Wallet,
+  CalendarClock, CircleCheck, Files, TriangleAlert, Wallet,
 } from 'lucide-react';
 import type {
   CxpAntiguedadReporte, CxpEstadisticaReporte, CxpRangoAntiguedad, CxpRetencionesReporte,
 } from '@erp/contracts';
-import { Button, TextInput } from '../../../shared/ui-kit';
 import { CxpLayout } from '../CxpLayout';
 import { errorDe, formatoFecha, formatoMonto } from '../facturas-especiales/api';
 import {
-  antiguedadApi, diasAlertaVencimiento, errorPeriodo, estadisticaApi, etiquetaMes, formatoLocal, hoyGuatemala, leerPeriodo,
+  antiguedadApi, diasAlertaVencimiento, estadisticaApi, etiquetaMes, formatoLocal, leerPeriodo,
   parametrosPeriodo, retencionesApi, serieColor, type Periodo,
 } from './api';
 import { DetallePendientes, situacionDe } from './components/DetallePendientes';
+import { AtajosPeriodo, CamposPeriodo, PanelFiltros, erroresPeriodo } from './components/FiltrosReporte';
 import { ReportesEncabezado, rutaReporte } from './components/ReportesEncabezado';
 import {
   BarraSegmentada, Cifra, FilaDistribucion, GraficoColumnas, Insignia, Panel, PanelCargando, PanelError, PanelVacio,
@@ -45,7 +45,7 @@ export function CxpReportesResumenPage() {
   const busqueda = params.toString();
   const periodo = useMemo(() => leerPeriodo(new URLSearchParams(busqueda)), [busqueda]);
   const [formulario, setFormulario] = useState<Periodo>(periodo);
-  const [errorFormulario, setErrorFormulario] = useState<string | null>(null);
+  const [validar, setValidar] = useState(false);
   const [antiguedad, setAntiguedad] = useState<Estado<CxpAntiguedadReporte>>(CARGANDO);
   const [estadistica, setEstadistica] = useState<Estado<CxpEstadisticaReporte>>(CARGANDO);
   const [retenciones, setRetenciones] = useState<Estado<CxpRetencionesReporte>>(CARGANDO);
@@ -68,16 +68,19 @@ export function CxpReportesResumenPage() {
   }, [periodo, cargarAntiguedad, cargarEstadistica, cargarRetenciones]);
   useEffect(() => { diasAlertaVencimiento().then(setDiasAlerta).catch(() => setDiasAlerta(null)); }, []);
 
-  const actualizar = (event: React.FormEvent) => {
-    event.preventDefault();
-    const problema = errorPeriodo(formulario);
-    setErrorFormulario(problema);
-    if (problema) return;
-    if (formulario.fechaInicio === periodo.fechaInicio && formulario.fechaFin === periodo.fechaFin) {
+  /** Con el mismo período vuelve a consultar; con otro, lo escribe en la URL y eso recarga los bloques. */
+  const aplicarPeriodo = (siguiente: Periodo) => {
+    setFormulario(siguiente);
+    setValidar(true);
+    const errores = erroresPeriodo(siguiente);
+    if (errores.desde || errores.hasta) return;
+    if (siguiente.fechaInicio === periodo.fechaInicio && siguiente.fechaFin === periodo.fechaFin) {
       cargarAntiguedad(); cargarEstadistica(); cargarRetenciones();
-    } else setParams(parametrosPeriodo(formulario));
+    } else setParams(parametrosPeriodo(siguiente));
   };
   const ocupado = antiguedad.cargando || estadistica.cargando || retenciones.cargando;
+  const pendientes = formulario.fechaInicio !== periodo.fechaInicio || formulario.fechaFin !== periodo.fechaFin;
+  const erroresFecha = validar ? erroresPeriodo(formulario) : { desde: null, hasta: null };
 
   // Monedas con saldo o retenciones; GTQ primero cuando existe.
   const monedas = useMemo(() => {
@@ -130,17 +133,12 @@ export function CxpReportesResumenPage() {
     <div className="space-y-5 max-w-[1600px]">
       <ReportesEncabezado actual="resumen" descripcion={descripcion} />
 
-      <form onSubmit={actualizar} noValidate aria-label="Período del resumen"
-        className="bg-white border border-slate-200 rounded-xl p-4 grid gap-3 sm:grid-cols-[minmax(8.5rem,11rem)_minmax(8.5rem,11rem)_auto] sm:items-end sm:justify-start">
-        <TextInput id="res-desde" type="date" label="Desde" required value={formulario.fechaInicio} max={formulario.fechaFin || hoyGuatemala()}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaInicio: event.target.value })} />
-        <TextInput id="res-hasta" type="date" label="Hasta (fecha de corte)" required value={formulario.fechaFin} max={hoyGuatemala()}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFormulario({ ...formulario, fechaFin: event.target.value })} />
-        <Button type="submit" icon={ocupado ? LoaderCircle : RefreshCw} disabled={ocupado} aria-busy={ocupado}
-          className={ocupado ? '[&>svg]:animate-spin' : ''}>{ocupado ? 'Consultando…' : 'Actualizar'}</Button>
-      </form>
-
-      {errorFormulario && <PanelError mensaje={errorFormulario} />}
+      <PanelFiltros titulo="Período del resumen" cargando={ocupado} pendientes={pendientes} textoBoton="Actualizar"
+        errorValidacion={erroresFecha.desde ?? erroresFecha.hasta} onSubmit={() => aplicarPeriodo(formulario)}
+        atajos={<AtajosPeriodo periodo={formulario} cargando={ocupado} onElegir={aplicarPeriodo} />}>
+        <CamposPeriodo prefijo="res" periodo={formulario} mostrarErrores={validar} etiquetaHasta="Hasta (fecha de corte)"
+          className="lg:col-span-3" onCambiar={setFormulario} />
+      </PanelFiltros>
 
       {monedas.length > 1 && <div role="group" aria-label="Moneda de los indicadores" className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-medium text-slate-700">Moneda:</span>
